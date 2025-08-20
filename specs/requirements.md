@@ -6,7 +6,7 @@ This document serves as both a process guide and template for creating feature r
 
 ### 1. Context Gathering
 Start by collecting:
-- Feature name and sponsor
+- Feature name
 - Problem statement  
 - Business value
 - Target timeline
