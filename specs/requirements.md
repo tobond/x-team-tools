@@ -38,8 +38,7 @@ Ensure requirements are:
 
 > **Feature:** [FEATURE_NAME]  
 > **Created:** [DATE]  
-> **Status:** [Draft/Review/Approved]  
-> **Sponsor:** [REQUESTER/SPONSOR]
+> **Status:** [Draft/Review/Approved]
 
 ### Overview
 [Brief description of what this feature does and the business value it provides]
