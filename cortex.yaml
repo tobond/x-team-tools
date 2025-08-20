@@ -1,0 +1,17 @@
+openapi: 3.0.0
+info:
+  title: x-team-tools
+  description: Common useful tooling. Examples: scripts, AI prompts, templates Created by Kristin Greenman via the GitHub Connector
+  x-cortex-git:
+    github:
+      alias: r7org
+      repository: rapid7/x-team-tools
+  x-cortex-tag: x-team-tools
+  x-cortex-type: service
+  x-cortex-domain-parents:
+    - tag: data-foundations
+  x-cortex-groups:
+    - target:not-deployed
+    - strategy:cloud
+    - exposure:internal-ship
+    
