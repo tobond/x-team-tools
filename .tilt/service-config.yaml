@@ -1,0 +1,338 @@
+# Service configuration for Tilt development environment
+# Supports multiple application types: Python, Java, Go, Node.js, CrewAI services
+
+services:
+  # Python CrewAI Service Example
+  ai-agentic-mdr-oscar:
+    type: "python"
+    build_context: "./ai-agentic-mdr-oscar"
+    dockerfile: "./ai-agentic-mdr-oscar/Dockerfile"
+    ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/ai-agentic-mdr-oscar:latest"
+    dependencies: ["database", "redis"]
+    ports: [8080, 8081]
+    env_vars:
+      - name: "LOG_LEVEL"
+        value: "DEBUG"
+      - name: "ENVIRONMENT"
+        value: "local"
+      - name: "PYTHONPATH"
+        value: "/app"
+    resources:
+      cpu: "500m"
+      memory: "512Mi"
+    health_check:
+      path: "/health"
+      port: 8080
+    
+  # Another Python CrewAI Service
+  ai-agentic-leql-generator:
+    type: "python"
+    build_context: "./ai-agentic-leql-generator"
+    dockerfile: "./ai-agentic-leql-generator/Dockerfile"
+    ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/ai-agentic-leql-generator:latest"
+    dependencies: ["database"]
+    ports: [8082]
+    env_vars:
+      - name: "LOG_LEVEL"
+        value: "DEBUG"
+      - name: "ENVIRONMENT"
+        value: "local"
+      - name: "PYTHONPATH"
+        value: "/app"
+    resources:
+      cpu: "500m"
+      memory: "512Mi"
+    health_check:
+      path: "/health"
+      port: 8082
+    
+  # Java Spring Boot Service Example
+  user-management-service:
+    type: "java"
+    build_context: "./user-management-service"
+    dockerfile: "./user-management-service/Dockerfile"
+    ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/user-management-service:latest"
+    dependencies: ["database"]
+    ports: [8090]
+    env_vars:
+      - name: "SPRING_PROFILES_ACTIVE"
+        value: "local"
+      - name: "LOG_LEVEL"
+        value: "DEBUG"
+      - name: "JAVA_OPTS"
+        value: "-Xmx512m -Xms256m"
+    resources:
+      cpu: "1000m"
+      memory: "1Gi"
+    health_check:
+      path: "/actuator/health"
+      port: 8090
+    
+  # Go Microservice Example
+  api-gateway:
+    type: "go"
+    build_context: "./api-gateway"
+    dockerfile: "./api-gateway/Dockerfile"
+    ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/api-gateway:latest"
+    dependencies: ["user-management-service"]
+    ports: [8000]
+    env_vars:
+      - name: "LOG_LEVEL"
+        value: "debug"
+      - name: "ENV"
+        value: "local"
+      - name: "PORT"
+        value: "8000"
+    resources:
+      cpu: "250m"
+      memory: "256Mi"
+    health_check:
+      path: "/health"
+      port: 8000
+      
+  # Node.js Service Example
+  notification-service:
+    type: "nodejs"
+    build_context: "./notification-service"
+    dockerfile: "./notification-service/Dockerfile"
+    ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/notification-service:latest"
+    dependencies: ["redis"]
+    ports: [3000]
+    env_vars:
+      - name: "NODE_ENV"
+        value: "development"
+      - name: "LOG_LEVEL"
+        value: "debug"
+      - name: "PORT"
+        value: "3000"
+    resources:
+      cpu: "250m"
+      memory: "256Mi"
+    health_check:
+      path: "/health"
+      port: 3000
+
+  # Infrastructure Services
+  database:
+    type: "postgres"
+    build_context: "./infrastructure/database"
+    dockerfile: "./infrastructure/database/Dockerfile"
+    ecr_image: "postgres:14-alpine"
+    dependencies: []
+    ports: [5432]
+    env_vars:
+      - name: "POSTGRES_DB"
+        value: "devdb"
+      - name: "POSTGRES_USER"
+        value: "devuser"
+      - name: "POSTGRES_PASSWORD"
+        value: "devpass"
+    resources:
+      cpu: "250m"
+      memory: "512Mi"
+    health_check:
+      path: "/"
+      port: 5432
+      
+  redis:
+    type: "redis"
+    build_context: "./infrastructure/redis"
+    dockerfile: "./infrastructure/redis/Dockerfile"
+    ecr_image: "redis:7-alpine"
+    dependencies: []
+    ports: [6379]
+    env_vars:
+      - name: "REDIS_PASSWORD"
+        value: "devpass"
+    resources:
+      cpu: "100m"
+      memory: "128Mi"
+    health_check:
+      path: "/"
+      port: 6379
+
+  # Message Queue Services
+  rabbitmq:
+    type: "rabbitmq"
+    build_context: "./infrastructure/rabbitmq"
+    dockerfile: "./infrastructure/rabbitmq/Dockerfile"
+    ecr_image: "rabbitmq:3-management-alpine"
+    dependencies: []
+    ports: [5672, 15672]
+    env_vars:
+      - name: "RABBITMQ_DEFAULT_USER"
+        value: "devuser"
+      - name: "RABBITMQ_DEFAULT_PASS"
+        value: "devpass"
+        sensitive: true
+      - name: "RABBITMQ_DEFAULT_VHOST"
+        value: "dev"
+    resources:
+      cpu: "250m"
+      memory: "512Mi"
+    health_check:
+      path: "/api/health/checks/virtual-hosts"
+      port: 15672
+
+  # Mock Services for External APIs
+  mock-payment-api:
+    type: "mock"
+    build_context: "./infrastructure/mock-services"
+    ecr_image: "mock-service:latest"
+    dependencies: []
+    ports: [8090]
+    resources:
+      cpu: "100m"
+      memory: "128Mi"
+    mock_endpoints:
+      - path: "/api/v1/payments"
+        method: "POST"
+        response:
+          payment_id: "mock-12345"
+          status: "success"
+          amount: 100.00
+        status_code: 201
+        description: "Create payment"
+      - path: "/api/v1/payments/{id}"
+        method: "GET"
+        response:
+          payment_id: "mock-12345"
+          status: "completed"
+          amount: 100.00
+          created_at: "2024-01-01T00:00:00Z"
+        description: "Get payment details"
+      - path: "/api/v1/payments/{id}/refund"
+        method: "POST"
+        response:
+          refund_id: "refund-67890"
+          status: "processed"
+          amount: 100.00
+        description: "Process refund"
+
+  mock-user-api:
+    type: "mock"
+    build_context: "./infrastructure/mock-services"
+    ecr_image: "mock-service:latest"
+    dependencies: []
+    ports: [8091]
+    resources:
+      cpu: "100m"
+      memory: "128Mi"
+    mock_endpoints:
+      - path: "/api/v1/users"
+        method: "GET"
+        response:
+          users:
+            - id: 1
+              name: "Mock User 1"
+              email: "user1@mock.local"
+            - id: 2
+              name: "Mock User 2"
+              email: "user2@mock.local"
+        description: "List users"
+      - path: "/api/v1/users"
+        method: "POST"
+        response:
+          id: 3
+          name: "New Mock User"
+          email: "newuser@mock.local"
+          created_at: "2024-01-01T00:00:00Z"
+        status_code: 201
+        description: "Create user"
+      - path: "/api/v1/users/{id}"
+        method: "GET"
+        response:
+          id: 1
+          name: "Mock User 1"
+          email: "user1@mock.local"
+          profile:
+            bio: "This is a mock user profile"
+            preferences: {"theme": "dark", "notifications": true}
+        description: "Get user details"
+
+  mock-notification-service:
+    type: "mock"
+    build_context: "./infrastructure/mock-services"
+    ecr_image: "mock-service:latest"
+    dependencies: []
+    ports: [8092]
+    resources:
+      cpu: "100m"
+      memory: "128Mi"
+    mock_endpoints:
+      - path: "/api/v1/notifications/send"
+        method: "POST"
+        response:
+          notification_id: "notif-12345"
+          status: "sent"
+          recipient: "user@example.com"
+          type: "email"
+        status_code: 202
+        description: "Send notification"
+      - path: "/api/v1/notifications/{id}/status"
+        method: "GET"
+        response:
+          notification_id: "notif-12345"
+          status: "delivered"
+          sent_at: "2024-01-01T00:00:00Z"
+          delivered_at: "2024-01-01T00:00:05Z"
+        description: "Get notification status"
+
+# Global configuration
+global:
+  # Default resource limits
+  default_resources:
+    cpu: "100m"
+    memory: "128Mi"
+  
+  # Default health check settings
+  default_health_check:
+    initial_delay_seconds: 30
+    period_seconds: 10
+    timeout_seconds: 5
+    failure_threshold: 3
+  
+  # Default readiness check settings
+  default_readiness_check:
+    initial_delay_seconds: 5
+    period_seconds: 5
+    timeout_seconds: 3
+    failure_threshold: 3
+
+# Service Customization Examples
+# ==============================
+# 
+# The following examples show how to customize services at runtime using Tilt arguments:
+#
+# 1. Disable specific services:
+#    tilt up -- --services=app1,app2,app3 --disable_services=app3
+#
+# 2. Override ECR image versions:
+#    tilt up -- --services=app1,app2 --ecr_versions=app1:v1.2.3,app2:latest
+#
+# 3. Override environment variables:
+#    tilt up -- --services=app1 --env_overrides=app1:LOG_LEVEL=DEBUG,app1:PORT=9000
+#
+# 4. Set build strategy:
+#    tilt up -- --build_strategy=local          # Build all services locally
+#    tilt up -- --build_strategy=ecr            # Use ECR for all services (default)
+#    tilt up -- --build_strategy=mixed --build_local=app1  # Mixed strategy
+#
+# 5. Combined customizations:
+#    tilt up -- --services=app1,app2,database \
+#               --build_strategy=mixed \
+#               --build_local=app1 \
+#               --ecr_versions=app2:v1.2.3 \
+#               --env_overrides=app1:LOG_LEVEL=DEBUG,app2:CACHE_SIZE=1000
+
+# Schema validation rules (for documentation)
+# Each service must have:
+# - type: Application type (python|java|go|nodejs|postgres|redis|generic)
+# - build_context: Path to build context directory
+# - dockerfile: Path to Dockerfile (optional, defaults to build_context/Dockerfile)
+# - ecr_image: ECR image reference for production images
+# - dependencies: List of service names this service depends on
+# - ports: List of ports the service exposes
+# - env_vars: List of environment variables with name/value pairs
+# - resources: CPU and memory resource limits
+# - health_check: Health check configuration with path and port
