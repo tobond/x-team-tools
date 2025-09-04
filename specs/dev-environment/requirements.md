@@ -4,6 +4,8 @@
 
 This feature will provide a robust local development environment system using Tilt that enables developers to work on any type of application (Python, Java, Go, Node.js, etc.) including CrewAI services, with fast feedback loops and near-instant deployment to a local Kubernetes environment. The system will generate Kubernetes manifests to mirror production deployment patterns while supporting hot reloading, multiple image sources, and flexible multi-service deployments. Each developer will have a completely isolated environment.
 
+**Architecture Note**: The system follows a **modular architecture** with clear separation of concerns, where the main Tiltfile (150 lines) orchestrates focused modules for configuration, cluster management, manifest generation, service deployment, dependency management, and monitoring. This approach ensures maintainability, testability, and enables team collaboration while preserving all functionality.
+
 ## Requirements
 
 ### Requirement 1

@@ -46,50 +46,85 @@ graph TB
 
 ## Components and Interfaces
 
-### Tilt Configuration (Tiltfile)
+### Modular Architecture Benefits
 
-The main Tiltfile will serve as the entry point for the development environment using Tilt best practices:
+The system follows a **modular architecture** with clear separation of concerns for enhanced maintainability:
 
+**Key Benefits:**
+- **Maintainability**: Each module handles a single responsibility (150 lines vs 1200+ monolithic)
+- **Testability**: Individual modules can be tested in isolation
+- **Collaboration**: Multiple developers can work on different modules simultaneously
+- **Extensibility**: Easy to add new service types and features
+- **Readability**: Clear module boundaries and focused functionality
+
+### Modular Tilt Architecture
+
+The Tilt configuration follows a modular architecture with clear separation of concerns for maintainability and scalability:
+
+#### Main Tiltfile Structure
 ```python
-# Main Tiltfile structure
+# Main Tiltfile - Orchestration only (150 lines)
 load('ext://namespace', 'namespace_create')
 load('ext://configmap', 'configmap_create')
 load('ext://secret', 'secret_create_generic')
 
-# Configuration using Tilt's config system
-config.define_string_list("services", args=True, usage="List of services to deploy")
-config.define_string("developer_id", args=False, usage="Developer identifier for namespace isolation")
-config.define_string("cluster_type", args=False, usage="Local cluster type: kind|k3d|docker-desktop")
-config.define_bool("enable_debug", args=False, usage="Enable debug mode with verbose logging")
+# Load modular libraries for separation of concerns
+load('.tilt/lib/config.star', 'parse_tilt_config', 'load_service_config', 'validate_services')
+load('.tilt/lib/cluster.star', 'validate_cluster_safety', 'detect_cluster_environment', 'setup_cluster_monitoring')
+load('.tilt/lib/namespace.star', 'setup_namespace')
+load('.tilt/lib/services.star', 'deploy_service', 'create_deployment_summary')
+load('.tilt/lib/dependencies.star', 'setup_service_dependencies')
+load('.tilt/lib/monitoring.star', 'setup_monitoring_resources', 'setup_safety_monitoring', 'setup_cleanup_resources')
 
-cfg = config.parse()
+def main():
+    """Main orchestration flow with modular components"""
+    
+    # 1. Parse and validate configuration
+    tilt_config = parse_tilt_config()
+    service_configs = load_service_config()
+    
+    # 2. Validate cluster safety and setup monitoring
+    current_context = validate_cluster_safety(tilt_config["cluster_type"], tilt_config["debug_mode"])
+    cluster_info = detect_cluster_environment(current_context, tilt_config["debug_mode"])
+    setup_cluster_monitoring(current_context, cluster_info)
+    
+    # 3. Setup isolated namespace
+    namespace = setup_namespace(tilt_config["developer_id"], current_context, tilt_config["debug_mode"])
+    
+    # 4. Deploy services with comprehensive orchestration
+    deployed_services = []
+    for service_name in tilt_config["services_to_deploy"]:
+        deployment_result = deploy_service(
+            service_name, 
+            service_configs['services'][service_name], 
+            namespace, 
+            service_configs.get('global', {}),
+            tilt_config["build_local_services"], 
+            tilt_config["developer_id"], 
+            tilt_config["debug_mode"]
+        )
+        deployed_services.append(deployment_result)
+    
+    # 5. Setup service dependencies and monitoring
+    setup_service_dependencies(tilt_config["services_to_deploy"], service_configs, tilt_config["debug_mode"])
+    create_deployment_summary(deployed_services, namespace, tilt_config["developer_id"])
 
-# Set defaults
-developer_id = cfg.get("developer_id", os.environ.get("USER", "dev"))
-developer_namespace = "dev-" + developer_id
-services_to_deploy = cfg.get("services", [])
-debug_mode = cfg.get("enable_debug", False)
+# Execute main orchestration
+main()
+```
 
-# Load service configurations
-service_configs = read_yaml('.tilt/service-config.yaml')
-
-# Create isolated namespace with proper labels
-namespace_create(
-    developer_namespace,
-    labels=['tilt.dev/developer=' + developer_id, 'tilt.dev/environment=local']
-)
-
-# Deploy services based on configuration
-for service_name in services_to_deploy:
-    if service_name in service_configs['services']:
-        deploy_service(service_name, service_configs['services'][service_name], developer_namespace)
-    else:
-        fail("Service '{}' not found in service-config.yaml".format(service_name))
-
-# Add resource dependencies and ordering
-if len(services_to_deploy) > 1:
-    # Ensure proper startup order based on dependencies
-    setup_service_dependencies(services_to_deploy, service_configs)
+#### Modular Library Structure
+```
+.tilt/lib/
+├── config.star              # Configuration parsing and validation
+├── cluster.star             # Cluster safety and environment detection
+├── namespace.star           # Namespace management and isolation
+├── k8s_manifests.star       # Kubernetes manifest generation
+├── config_secrets.star      # ConfigMap and Secret management
+├── dependencies.star        # Service dependency ordering
+├── builds.star              # Build strategies and live updates
+├── services.star            # Service deployment orchestration
+└── monitoring.star          # Monitoring and validation resources
 ```
 
 ### Service Configuration Schema
@@ -168,52 +203,76 @@ services:
       memory: "256Mi"
 ```
 
-### Kubernetes Manifest Generation
+### Kubernetes Manifest Generation System
 
-Tilt will generate Kubernetes manifests dynamically using Tilt's built-in functions and extensions:
+The manifest generation system is implemented as a focused module (`k8s_manifests.star`) with comprehensive templating capabilities:
 
 ```python
-def generate_k8s_manifests(service_name, service_config, namespace, image_name):
-    """Generate Kubernetes manifests using Tilt's templating capabilities"""
+# .tilt/lib/k8s_manifests.star
+def generate_k8s_manifests(service_name, service_config, namespace, image_name, global_config, developer_id):
+    """Generate comprehensive Kubernetes manifests using Tilt's templating capabilities"""
     
-    # Use Tilt's built-in YAML generation
-    deployment_yaml = """
-apiVersion: apps/v1
+    # Extract service configuration with defaults
+    ports = service_config.get("ports", [8080])
+    env_vars = service_config.get("env_vars", [])
+    resources = service_config.get("resources", {})
+    health_check = service_config.get("health_check", {"path": "/health", "port": ports[0] if ports else 8080})
+    service_type = service_config.get("type", "generic")
+    
+    # Get defaults from global configuration
+    default_resources = global_config.get("default_resources", {"cpu": "100m", "memory": "128Mi"})
+    default_health = global_config.get("default_health_check", {
+        "initial_delay_seconds": 30,
+        "period_seconds": 10,
+        "timeout_seconds": 5,
+        "failure_threshold": 3
+    })
+    
+    # Generate manifest components using helper functions
+    env_yaml = _generate_env_vars(env_vars, service_name)
+    ports_yaml = _generate_container_ports(ports)
+    resources_yaml = _generate_resources(resources, default_resources)
+    service_ports_yaml = _generate_service_ports(ports)
+    liveness_probe, readiness_probe = _generate_probes(service_type, health_check, default_health, default_readiness)
+    labels_yaml = _generate_labels(service_name, service_type, developer_id)
+    
+    # Build comprehensive deployment manifest with security context
+    deployment_yaml = """apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {service_name}
   namespace: {namespace}
   labels:
-    app: {service_name}
-    tilt.dev/resource: {service_name}
+{labels_yaml}  annotations:
+    tilt.dev/created-by: "tilt"
+    tilt.dev/created-at: "{timestamp}"
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: {service_name}
   template:
     metadata:
       labels:
-        app: {service_name}
-    spec:
+{labels_yaml}    spec:
+      restartPolicy: Always
       containers:
       - name: {service_name}
         image: {image_name}
-        ports: {ports}
-        env: {env_vars}
-        resources: {resources}
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: {main_port}
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: {main_port}
-          initialDelaySeconds: 5
-          periodSeconds: 5
+        imagePullPolicy: Always
+{ports_yaml}{env_yaml}{resources_yaml}{liveness_probe}{readiness_probe}        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
 ---
 apiVersion: v1
 kind: Service
@@ -221,126 +280,141 @@ metadata:
   name: {service_name}
   namespace: {namespace}
   labels:
-    app: {service_name}
-spec:
+{labels_yaml}spec:
   selector:
     app: {service_name}
-  ports: {service_ports}
-  type: ClusterIP
+{service_ports_yaml}  type: ClusterIP
+  sessionAffinity: None
 """.format(
         service_name=service_name,
         namespace=namespace,
         image_name=image_name,
-        ports=format_container_ports(service_config.get("ports", [])),
-        env_vars=format_env_vars(service_config.get("env_vars", [])),
-        resources=format_resources(service_config.get("resources", {})),
-        main_port=service_config.get("ports", [8080])[0],
-        service_ports=format_service_ports(service_config.get("ports", []))
+        labels_yaml=labels_yaml,
+        ports_yaml=ports_yaml,
+        env_yaml=env_yaml,
+        resources_yaml=resources_yaml,
+        liveness_probe=liveness_probe,
+        readiness_probe=readiness_probe,
+        service_ports_yaml=service_ports_yaml,
+        timestamp=str(local('date -u +"%Y-%m-%dT%H:%M:%SZ"')).strip()
     )
     
     return deployment_yaml
-
-# Helper functions for YAML formatting
-def format_container_ports(ports):
-    return [{"containerPort": port} for port in ports]
-
-def format_env_vars(env_vars):
-    return [{"name": env["name"], "value": env["value"]} for env in env_vars]
-
-def format_resources(resources):
-    if not resources:
-        return {"requests": {"cpu": "100m", "memory": "128Mi"}}
-    return {
-        "requests": {"cpu": "100m", "memory": "128Mi"},
-        "limits": resources
-    }
-
-def format_service_ports(ports):
-    return [{"name": f"port-{port}", "port": port, "targetPort": port} for port in ports]
 ```
 
-### Service Deployment Functions
+#### Modular Helper Functions
+The manifest generation includes specialized helper functions for different aspects:
+- `_generate_env_vars()`: ConfigMap and Secret references
+- `_generate_container_ports()`: Proper port naming (http, https, custom)
+- `_generate_resources()`: CPU/memory requests and limits
+- `_generate_probes()`: HTTP probes for apps, TCP probes for databases
+- `_generate_labels()`: Comprehensive resource labeling
 
+### Modular Service Deployment System
+
+The service deployment system is organized into focused modules for maintainability:
+
+#### Service Orchestration (services.star)
 ```python
-def deploy_service(service_name, service_config, namespace):
-    """Deploy a service using Tilt best practices"""
+# .tilt/lib/services.star
+def deploy_service(service_name, service_config, namespace, global_config, build_local_services, developer_id, debug_mode=False):
+    """Deploy a service using comprehensive Tilt best practices with full k8s resource management"""
     
-    # Determine build strategy
-    build_locally = config.tilt_subcommand == 'up' and service_name in cfg.get("build_local", [])
+    # Create ConfigMaps and Secrets first (they need to exist before deployment)
+    create_service_configmap(service_name, service_config, namespace, debug_mode)
+    create_service_secret(service_name, service_config, namespace, debug_mode)
+    
+    # Setup build strategy (local or ECR) using dedicated build module
+    build_result = setup_build_strategy(service_name, service_config, build_local_services, debug_mode)
+    image_name = build_result["image_name"]
+    
+    # Generate and apply comprehensive Kubernetes manifests
+    manifests = generate_k8s_manifests(
+        service_name, service_config, namespace, image_name, global_config, developer_id
+    )
+    
+    # Apply manifests with validation
+    k8s_yaml(manifests, allow_duplicates=False, validate=True)
+    
+    # Configure k8s resource with comprehensive settings
+    _configure_k8s_resource(service_name, service_config, developer_id, debug_mode)
+    
+    # Create service-specific monitoring resource
+    _create_service_monitor(service_name, namespace)
+    
+    return {
+        "name": service_name,
+        "type": service_config.get("type", "generic"),
+        "ports": service_config.get("ports", []),
+        "image": image_name,
+        "build_locally": build_result["build_locally"]
+    }
+```
+
+#### Build Strategy Management (builds.star)
+```python
+# .tilt/lib/builds.star
+def setup_build_strategy(service_name, service_config, build_local_services, debug_mode=False):
+    """Setup build strategy (local or ECR) for a service"""
+    
+    build_locally = service_name in build_local_services
     
     if build_locally:
-        # Local build with optimized live updates
-        image_name = service_name + ":latest"
-        
-        # Language-specific live update configurations
-        live_updates = get_live_updates_for_type(service_config.get("type", "generic"))
-        
-        docker_build(
-            image_name,
-            service_config["build_context"],
-            dockerfile=service_config.get("dockerfile", "Dockerfile"),
-            live_update=live_updates,
-            # Use build args for local development
-            build_args={"ENV": "local", "DEBUG": "true"}
-        )
+        return _setup_local_build(service_name, service_config, debug_mode)
     else:
-        # Use ECR image - Tilt will handle pulling
-        image_name = service_config["ecr_image"]
-    
-    # Generate and apply Kubernetes manifests
-    manifests = generate_k8s_manifests(service_name, service_config, namespace, image_name)
-    k8s_yaml(manifests)
-    
-    # Configure the k8s resource with proper settings
-    k8s_resource(
-        service_name,
-        port_forwards=[str(port) + ":" + str(port) for port in service_config.get("ports", [])],
-        resource_deps=service_config.get("dependencies", []),
-        labels=["app:" + service_name, "type:" + service_config.get("type", "generic")]
-    )
+        return _setup_ecr_build(service_name, service_config, debug_mode)
 
-def get_live_updates_for_type(app_type):
+def get_live_updates_for_type(app_type, build_context):
     """Return optimized live update rules based on application type"""
     if app_type == "python":
         return [
-            sync('./src', '/app/src'),
-            sync('./requirements.txt', '/app/requirements.txt'),
-            run('pip install -r requirements.txt', trigger=['requirements.txt']),
+            sync(build_context + '/src', '/app/src'),
+            sync(build_context + '/requirements.txt', '/app/requirements.txt'),
+            run('pip install -r requirements.txt', trigger=[build_context + '/requirements.txt']),
             restart_container()
         ]
     elif app_type == "java":
         return [
-            sync('./target/classes', '/app/classes'),
+            sync(build_context + '/target/classes', '/app/classes'),
             restart_container()
         ]
     elif app_type == "go":
         return [
-            sync('./cmd', '/app/cmd'),
-            sync('./pkg', '/app/pkg'),
-            run('go build -o /app/main ./cmd', trigger=['./cmd/**/*.go', './pkg/**/*.go']),
+            sync(build_context + '/cmd', '/app/cmd'),
+            sync(build_context + '/pkg', '/app/pkg'),
+            run('go build -o /app/main ./cmd', trigger=[build_context + '/cmd/**/*.go', build_context + '/pkg/**/*.go']),
             restart_container()
         ]
     elif app_type == "nodejs":
         return [
-            sync('./src', '/app/src'),
-            sync('./package.json', '/app/package.json'),
-            run('npm install', trigger=['package.json']),
+            sync(build_context + '/src', '/app/src'),
+            sync(build_context + '/package.json', '/app/package.json'),
+            run('npm install', trigger=[build_context + '/package.json']),
             restart_container()
         ]
     else:
         return [restart_container()]
+```
 
-def setup_service_dependencies(services, service_configs):
-    """Configure service startup dependencies"""
-    for service_name in services:
-        service_config = service_configs['services'][service_name]
-        deps = service_config.get("dependencies", [])
-        
-        # Only add dependencies that are also being deployed
-        active_deps = [dep for dep in deps if dep in services]
-        
-        if active_deps:
-            k8s_resource(service_name, resource_deps=active_deps)
+#### Dependency Management (dependencies.star)
+```python
+# .tilt/lib/dependencies.star
+def setup_service_dependencies(services, service_configs, debug_mode=False):
+    """Configure comprehensive service startup dependencies with proper ordering"""
+    
+    # Build dependency graph
+    dependency_graph = _build_dependency_graph(services, service_configs, debug_mode)
+    
+    # Get deployment order using topological sort
+    deployment_order = _topological_sort(dependency_graph)
+    
+    # Apply resource dependencies to k8s resources
+    _apply_resource_dependencies(services, dependency_graph, debug_mode)
+    
+    # Create deployment order monitoring resource
+    _create_deployment_order_resource(deployment_order, dependency_graph)
+    
+    return deployment_order
 ```
 
 ## Data Models
