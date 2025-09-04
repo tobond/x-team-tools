@@ -1,0 +1,104 @@
+# Developer Configuration Template
+# Copy this file to developer-config.yaml and customize for your environment
+
+developer:
+  # Your developer ID (used for namespace isolation)
+  # Use lowercase letters, numbers, and hyphens only
+  id: "your-name"
+  
+  # Optional: Custom namespace (will be auto-generated if not specified)
+  # namespace: "dev-your-name"
+
+cluster:
+  # Type of Kubernetes cluster to use
+  # Options: "docker-desktop", "kind", "k3d"
+  type: "docker-desktop"
+  
+  # Cluster name (for kind/k3d clusters)
+  name: "tilt-dev"
+  
+  # Optional: Custom kubeconfig context
+  # context: "docker-desktop"
+
+services:
+  # Services you want to run in your development environment
+  enabled:
+    - ai-agentic-mdr-oscar
+    - user-management-service
+    - api-gateway
+    - notification-service
+  
+  # Services to build locally from source code
+  # These will use live updates for fast development cycles
+  build_locally:
+    - ai-agentic-mdr-oscar
+  
+  # Services to pull from ECR registry
+  # Use this for stable services you're not actively developing
+  use_ecr:
+    - user-management-service
+    - api-gateway
+    - notification-service
+
+# Optional: Resource limits for your namespace
+resources:
+  namespace_quota:
+    cpu: "4"
+    memory: "8Gi"
+    storage: "20Gi"
+    
+  # Default resource requests/limits for services
+  default_resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+# Optional: Development preferences
+preferences:
+  # Enable debug mode for verbose logging
+  debug_mode: false
+  
+  # Auto-open Tilt UI in browser
+  auto_open_ui: true
+  
+  # Enable live updates by default
+  live_updates: true
+  
+  # Port forwarding preferences
+  port_forwards:
+    enabled: true
+    # Optional: Custom port mappings
+    # custom_ports:
+    #   ai-agentic-mdr-oscar: 8080
+    #   user-management-service: 8090
+
+# Optional: External services configuration
+external_services:
+  # Enable local database
+  database:
+    enabled: true
+    type: "postgresql"  # or "mysql"
+    
+  # Enable local Redis
+  redis:
+    enabled: true
+    
+  # Enable mock external APIs
+  mock_apis:
+    enabled: true
+    services:
+      - name: "external-api"
+        port: 9000
+
+# Optional: Environment-specific overrides
+environments:
+  development:
+    # Override any settings for development
+    debug_mode: true
+    
+  testing:
+    # Override any settings for testing
+    live_updates: false
