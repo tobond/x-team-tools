@@ -2,33 +2,6 @@
 # This configuration focuses on external dependencies and infrastructure services
 
 services:
-  # Test Application - AI Agentic Test App (now in workspace)
-  ai-agentic-test-app:
-    type: "python"
-    build_context: "./ai-agentic-test-app"
-    dockerfile: "./ai-agentic-test-app/Dockerfile"
-    dependencies: ["database", "redis"]
-    ports: [8000]
-    env_vars:
-      - name: "LOG_LEVEL"
-        value: "DEBUG"
-      - name: "ENVIRONMENT"
-        value: "local"
-      - name: "PYTHONPATH"
-        value: "/app"
-      - name: "PORT"
-        value: "8000"
-      - name: "DATABASE_URL"
-        value: "postgresql://testuser:testpass@database:5432/testdb"
-      - name: "REDIS_URL"
-        value: "redis://redis:6379"
-    resources:
-      cpu: "500m"
-      memory: "512Mi"
-    health_check:
-      path: "/health"
-      port: 8000
-
   # Database service (PostgreSQL)
   database:
     type: "external"

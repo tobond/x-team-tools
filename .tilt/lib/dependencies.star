@@ -188,8 +188,8 @@ def _calculate_dependency_levels(dependency_graph):
         
         levels.append(current_level)
         remaining_services -= set(current_level)
-        resolved_services.update(current_level)
-    
+        resolved_services = resolved_services | set(current_level)  # Use union instead of update()
+
     return levels
 
 def _setup_dependency_health_validation(dependency_graph, debug_mode):
@@ -227,7 +227,7 @@ def _create_service_dependency_health_check(service, dependencies, debug_mode):
         fi
         ''',
         deps=dependencies,
-        labels=['health-check', 'dependencies', 'service:' + service],
+        labels=['health-check', 'dependencies', 'service-' + service.replace('-', '_')],  # Fix invalid label format
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL
     )

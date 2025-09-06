@@ -1,0 +1,633 @@
+"""
+Service deployment and management
+Handles complete service deployment with k8s resources, monitoring, and configuration
+"""
+
+# Load all required modules at top level (required by Starlark)
+load('.tilt/lib/k8s_manifests.star', 'generate_k8s_manifests')
+load('.tilt/lib/config_secrets.star', 'create_service_configmap', 'create_service_secret')
+load('.tilt/lib/builds.star', 'setup_build_strategy', 'validate_build_requirements', 'get_build_info', 'optimize_docker_build_context')
+load('.tilt/lib/config.star', 'apply_service_customizations', 'get_effective_build_strategy')
+load('.tilt/lib/error_handling.star', 'handle_service_deployment_error')
+
+def deploy_service(service_name, service_config, namespace, global_config, build_local_services, developer_id, debug_mode=False, tilt_config=None):
+    """Deploy a service using Tilt best practices with comprehensive build management, k8s resource management, and error handling"""
+
+    # Apply service customizations if tilt_config is provided
+    if tilt_config:
+        service_config = apply_service_customizations(service_name, service_config, tilt_config)
+        build_strategy = get_effective_build_strategy(service_name, service_config, tilt_config)
+        build_locally = build_strategy == "local"
+    else:
+        build_locally = service_name in build_local_services
+
+    app_type = service_config.get("type", "generic")
+    build_context = service_config.get("build_context", "unknown")
+
+    if debug_mode:
+        print("🚀 Deploying service: " + service_name)
+        print("📦 Service type: " + app_type)
+        print("📁 Build context: " + build_context)
+        print("🔨 Build locally: " + str(build_locally))
+        if tilt_config and service_name in tilt_config.get("ecr_versions", {}):
+            print("🏷️  ECR version override: " + tilt_config["ecr_versions"][service_name])
+        if tilt_config and service_name in tilt_config.get("env_overrides", {}):
+            print("🔧 Environment overrides: " + str(list(tilt_config["env_overrides"][service_name].keys())))
+
+    try:
+        # Validate build requirements before proceeding
+        validate_build_requirements(service_name, service_config, build_locally)
+
+        # Optimize Docker build context for better performance
+        if build_locally:
+            optimize_docker_build_context(build_context, app_type)
+
+        # Get comprehensive build information
+        build_info = get_build_info(service_name, service_config, build_local_services)
+
+        # Create ConfigMaps and Secrets first (they need to exist before deployment)
+        create_service_configmap(service_name, service_config, namespace, debug_mode)
+        create_service_secret(service_name, service_config, namespace, debug_mode)
+
+        # Setup build strategy (local or ECR) with enhanced capabilities
+        build_result = setup_build_strategy(service_name, service_config, build_local_services, debug_mode)
+        image_name = build_result["image_name"]
+
+        # Generate and apply comprehensive Kubernetes manifests
+        manifests = generate_k8s_manifests(
+            service_name, service_config, namespace, image_name, global_config, developer_id
+        )
+
+        # Apply manifests using k8s_yaml with validation
+        k8s_yaml(
+            manifests,
+            allow_duplicates=False,
+            validate=True
+        )
+
+        # Configure k8s resource with comprehensive settings and error recovery
+        _configure_k8s_resource_with_error_handling(service_name, service_config, developer_id, debug_mode)
+
+        # Create service-specific monitoring resource
+        _create_service_monitor(service_name, namespace)
+
+    except Exception as e:
+        handle_service_deployment_error(service_name, e)
+
+    if debug_mode:
+        ports = service_config.get("ports", [])
+        print("Configured k8s resource for {} with {} port forwards".format(service_name, len(ports)))
+
+    return {
+        "name": service_name,
+        "type": service_config.get("type", "generic"),
+        "ports": service_config.get("ports", []),
+        "image": image_name,
+        "build_locally": build_result["build_locally"],
+        "build_context": build_result.get("build_context", build_context),
+        "app_type": build_result.get("app_type", app_type),
+        "ecr_image": build_result.get("ecr_image", ""),
+        "build_info": build_info
+    }
+
+def _configure_k8s_resource_with_error_handling(service_name, service_config, developer_id, debug_mode):
+    """Configure k8s_resource with comprehensive settings, error handling, and recovery mechanisms"""
+
+    # Configure enhanced port forwarding with named ports
+    port_forwards = []
+    ports = service_config.get("ports", [])
+    service_type = service_config.get("type", "generic")
+
+    for i, port in enumerate(ports):
+        # Create descriptive port forwards based on service type and port
+        if service_type == "postgres" and port == 5432:
+            port_forwards.append("{}:{}".format(port, port))
+        elif service_type == "redis" and port == 6379:
+            port_forwards.append("{}:{}".format(port, port))
+        elif i == 0:
+            port_forwards.append("{}:{}".format(port, port))
+        else:
+            port_forwards.append("{}:{}".format(port, port))
+
+    # Generate comprehensive resource labels for better UI grouping
+    resource_labels = [
+        "app:" + service_name,
+        "type:" + service_type,
+        "developer:" + developer_id,
+        "environment:local"
+    ]
+
+    # Add service category labels for UI grouping
+    if service_type in ["postgres", "redis", "mongodb", "mysql"]:
+        resource_labels.extend(["category:infrastructure", "tier:data"])
+    elif service_type in ["python", "java", "go", "nodejs"]:
+        resource_labels.extend(["category:application", "tier:service"])
+    else:
+        resource_labels.extend(["category:application", "tier:generic"])
+
+    # Add deployment strategy labels
+    build_strategy = "local" if service_name in service_config.get("build_local", []) else "ecr"
+    resource_labels.append("build:" + build_strategy)
+
+    # Determine trigger mode based on service type and configuration
+    trigger_mode = _determine_trigger_mode(service_name, service_config, service_type)
+
+    # Determine auto_init based on service criticality and error recovery needs
+    auto_init_setting = _determine_auto_init_for_error_recovery(service_name, service_config, service_type)
+
+    # Configure k8s resource with enhanced settings and error recovery
+    k8s_resource(
+        service_name,
+        port_forwards=port_forwards,
+        resource_deps=[],
+        labels=resource_labels,
+        auto_init=auto_init_setting,
+        trigger_mode=trigger_mode,
+        new_name=service_name,
+        pod_readiness="wait",
+        discovery_strategy="selectors-only",
+        extra_pod_selectors=[
+            {"app": service_name},
+            {"tilt.dev/resource": service_name}
+        ]
+    )
+
+    # Issue configuration warnings for potential issues
+    _check_and_warn_configuration_issues(service_name, service_config)
+
+    # Create service endpoint monitoring
+    _create_service_endpoint_monitor(service_name, service_config, ports, debug_mode)
+
+def _determine_trigger_mode(service_name, service_config, service_type):
+    """Determine appropriate trigger mode based on service characteristics"""
+
+    # Infrastructure services typically use manual trigger for stability
+    if service_type in ["postgres", "redis", "mongodb", "mysql"]:
+        return TRIGGER_MODE_MANUAL
+
+    # Check if service has manual trigger preference in config
+    if service_config.get("trigger_mode") == "manual":
+        return TRIGGER_MODE_MANUAL
+
+    # Development services use auto trigger for fast iteration
+    return TRIGGER_MODE_AUTO
+
+def _determine_auto_init_for_error_recovery(service_name, service_config, service_type):
+    """Determine auto_init setting based on error recovery requirements"""
+
+    # Infrastructure services should not auto-init during errors for stability
+    if service_type in ["postgres", "redis", "mongodb", "mysql"]:
+        return False
+
+    # Services with manual recovery preference
+    if service_config.get("manual_recovery", False):
+        return False
+
+    # Check if service is marked as critical (should not auto-restart during errors)
+    if service_config.get("critical", False):
+        return False
+
+    # Application services can auto-init for faster recovery
+    return True
+
+def _check_and_warn_configuration_issues(service_name, service_config):
+    """Check for configuration issues and issue warnings"""
+
+    load('.tilt/lib/error_handling.star', 'warn_configuration_issue')
+
+    # Check for missing health check configuration
+    if service_config.get("type") in ["python", "java", "go", "nodejs"]:
+        if not service_config.get("health_check"):
+            warn_configuration_issue(
+                service_name,
+                "No health check configured",
+                "Add health_check configuration for better reliability"
+            )
+
+    # Check for missing resource limits
+    if not service_config.get("resources"):
+        warn_configuration_issue(
+            service_name,
+            "No resource limits configured",
+            "Add CPU and memory limits to prevent resource exhaustion"
+        )
+
+    # Check for potentially problematic port configurations
+    ports = service_config.get("ports", [])
+    if ports:
+        # Check for common port conflicts
+        common_ports = [80, 443, 3000, 5432, 6379, 8080, 9000]
+        conflicting_ports = [p for p in ports if p in common_ports]
+        if conflicting_ports:
+            warn_configuration_issue(
+                service_name,
+                "Using common ports that may conflict: {}".format(conflicting_ports),
+                "Consider using alternative ports to avoid conflicts"
+            )
+
+    # Check for missing dependencies that might be needed
+    service_type = service_config.get("type", "generic")
+    dependencies = service_config.get("dependencies", [])
+
+    if service_type in ["python", "java", "go", "nodejs"] and not dependencies:
+        warn_configuration_issue(
+            service_name,
+            "Application service has no dependencies configured",
+            "Consider if this service needs database or cache dependencies"
+        )
+
+def _create_service_endpoint_monitor(service_name, service_config, ports, debug_mode):
+    """Create service endpoint monitoring and access information"""
+
+    if not ports:
+        return
+
+    service_type = service_config.get("type", "generic")
+
+    # Generate endpoint information
+    endpoint_info = []
+    for port in ports:
+        if service_type == "postgres":
+            endpoint_info.append("PostgreSQL: localhost:{} (user: postgres)".format(port))
+        elif service_type == "redis":
+            endpoint_info.append("Redis: localhost:{} (no auth)".format(port))
+        elif service_type in ["python", "java", "go", "nodejs"]:
+            endpoint_info.append("HTTP: http://localhost:{}".format(port))
+            if port == 8080:
+                endpoint_info.append("Health: http://localhost:{}/health".format(port))
+        else:
+            endpoint_info.append("Service: localhost:{}".format(port))
+
+    local_resource(
+        service_name + "-endpoints",
+        cmd='''
+        echo "🔗 SERVICE ENDPOINTS: ''' + service_name + '''"
+        echo "=================================="
+        ''' + '\n        '.join(['echo "  {}"'.format(info) for info in endpoint_info]) + '''
+        echo ""
+        echo "📊 Connection Status:"
+        ''' + '\n        '.join([
+            '''
+        if nc -z localhost {} 2>/dev/null; then
+            echo "  ✅ Port {} is accessible"
+        else
+            echo "  ❌ Port {} is not accessible"
+        fi'''.format(port, port, port) for port in ports
+        ]) + '''
+        echo ""
+        echo "💡 Access via Tilt UI port-forwards or use these endpoints directly"
+        ''',
+        deps=[service_name],
+        labels=["endpoints", "service:" + service_name, "monitoring"],
+        auto_init=False,
+        trigger_mode=TRIGGER_MODE_MANUAL
+    )
+
+def create_endpoint_dashboard(deployed_services, namespace):
+    """Create comprehensive endpoint dashboard for all services"""
+
+    if not deployed_services:
+        return
+
+    # Group services by type for better organization
+    web_services = [svc for svc in deployed_services if svc['type'] in ['python', 'java', 'go', 'nodejs'] and svc['ports']]
+    data_services = [svc for svc in deployed_services if svc['type'] in ['postgres', 'redis', 'mongodb'] and svc['ports']]
+
+    local_resource(
+        'endpoint-dashboard',
+        cmd='''
+        echo "🌐 SERVICE ENDPOINT DASHBOARD"
+        echo "============================"
+        echo "Namespace: ''' + namespace + '''"
+        echo ""
+        
+        ''' + ('''
+        echo "🌍 WEB SERVICES"
+        echo "---------------"
+        ''' + '\n        '.join([
+            '''
+        echo "📱 {}"
+        ''' + '\n        '.join([
+            '''
+        if nc -z localhost {} 2>/dev/null; then
+            echo "   ✅ http://localhost:{} (Ready)"
+        else
+            echo "   ❌ http://localhost:{} (Not accessible)"
+        fi'''.format(port, port, port) for port in svc['ports']
+        ]) + '''
+        echo "   Health: http://localhost:{}/health"
+        echo ""'''.format(svc['ports'][0] if svc['ports'] else 8080) for svc in web_services
+        ]) + '''
+        ''' if web_services else '') + '''
+        
+        ''' + ('''
+        echo "🗄️  DATA SERVICES"
+        echo "----------------"
+        ''' + '\n        '.join([
+            '''
+        echo "💾 {}"
+        ''' + '\n        '.join([
+            '''
+        if nc -z localhost {} 2>/dev/null; then
+            echo "   ✅ localhost:{} (Ready)"
+        else
+            echo "   ❌ localhost:{} (Not accessible)"
+        fi'''.format(port, port, port) for port in svc['ports']
+        ]) + '''
+        echo ""''' for svc in data_services
+        ]) + '''
+        ''' if data_services else '') + '''
+        
+        echo "🔧 CONNECTION COMMANDS"
+        echo "====================="
+        ''' + '\n        '.join([
+            '''echo "# Connect to {}:"'''.format(svc['name']) +
+            ('\n        echo "psql -h localhost -p {} -U postgres"'.format(svc['ports'][0]) if svc['type'] == 'postgres' else '') +
+            ('\n        echo "redis-cli -h localhost -p {}"'.format(svc['ports'][0]) if svc['type'] == 'redis' else '') +
+            ('\n        echo "curl http://localhost:{}/health"'.format(svc['ports'][0]) if svc['type'] in ['python', 'java', 'go', 'nodejs'] else '') +
+            '\n        echo ""'
+            for svc in deployed_services if svc['ports']
+        ]) + '''
+        
+        echo "💡 All endpoints are automatically port-forwarded by Tilt"
+        echo "💡 Check Tilt UI for real-time port-forward status"
+        ''',
+        deps=[svc['name'] for svc in deployed_services],
+        auto_init=True,
+        trigger_mode=TRIGGER_MODE_MANUAL,
+        labels=['endpoints', 'dashboard', 'connectivity']
+    )
+
+def _create_service_monitor(service_name, namespace):
+    """Create comprehensive service-specific monitoring resource with debugging capabilities"""
+
+    local_resource(
+        service_name + "-monitor",
+        cmd='''
+        echo "🔍 DETAILED SERVICE MONITOR: ''' + service_name + '''"
+        echo "=============================================="
+        echo "Namespace: ''' + namespace + '''"
+        echo "Timestamp: $(date)"
+        echo ""
+        
+        echo "📦 POD STATUS"
+        echo "-------------"
+        kubectl get pods -n ''' + namespace + ''' -l app=''' + service_name + ''' -o wide
+        echo ""
+        
+        echo "🔍 POD DETAILS"
+        echo "--------------"
+        POD_NAME=$(kubectl get pods -n ''' + namespace + ''' -l app=''' + service_name + ''' -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+        if [ -n "$POD_NAME" ]; then
+            echo "Pod Name: $POD_NAME"
+            kubectl describe pod $POD_NAME -n ''' + namespace + ''' | grep -A 10 -E "(Status|Conditions|Events)"
+        else
+            echo "❌ No pods found for service ''' + service_name + '''"
+        fi
+        echo ""
+        
+        echo "🌐 SERVICE ENDPOINTS"
+        echo "-------------------"
+        kubectl get svc -n ''' + namespace + ''' ''' + service_name + ''' -o wide 2>/dev/null || echo "❌ Service not found"
+        echo ""
+        
+        echo "🔗 ENDPOINT DETAILS"
+        echo "------------------"
+        kubectl get endpoints -n ''' + namespace + ''' ''' + service_name + ''' 2>/dev/null || echo "❌ Endpoints not found"
+        echo ""
+        
+        echo "📊 RESOURCE USAGE"
+        echo "----------------"
+        kubectl top pod -n ''' + namespace + ''' -l app=''' + service_name + ''' 2>/dev/null || echo "❌ Metrics unavailable"
+        echo ""
+        
+        echo "📝 RECENT LOGS (last 10 lines)"
+        echo "------------------------------"
+        if [ -n "$POD_NAME" ]; then
+            kubectl logs $POD_NAME -n ''' + namespace + ''' --tail=10 2>/dev/null || echo "❌ Logs unavailable"
+        fi
+        echo ""
+        
+        echo "🚨 RECENT EVENTS"
+        echo "---------------"
+        kubectl get events -n ''' + namespace + ''' --field-selector involvedObject.name=''' + service_name + ''' --sort-by='.lastTimestamp' | tail -8
+        echo ""
+        
+        echo "🔧 TROUBLESHOOTING COMMANDS"
+        echo "---------------------------"
+        echo "View logs: kubectl logs -f $POD_NAME -n ''' + namespace + '''"
+        echo "Exec into pod: kubectl exec -it $POD_NAME -n ''' + namespace + ''' -- /bin/sh"
+        echo "Port forward: kubectl port-forward svc/''' + service_name + ''' 8080:8080 -n ''' + namespace + '''"
+        echo "Describe service: kubectl describe svc ''' + service_name + ''' -n ''' + namespace + '''"
+        ''',
+        deps=[service_name],
+        labels=["monitoring", "service:" + service_name, "debugging"],
+        auto_init=False,
+        trigger_mode=TRIGGER_MODE_MANUAL
+    )
+
+def deploy_services_orchestrated(services_to_deploy, service_configs, namespace, global_config, build_local_services, developer_id, debug_mode=False, tilt_config=None):
+    """Deploy multiple services with orchestrated dependency management and parallel deployment"""
+
+    if debug_mode:
+        print("🚀 Starting orchestrated deployment of {} services".format(len(services_to_deploy)))
+
+    # Build dependency graph for deployment ordering
+    dependency_graph = _build_service_dependency_graph(services_to_deploy, service_configs, debug_mode)
+
+    # Get deployment phases for parallel deployment
+    deployment_phases = _calculate_deployment_phases(dependency_graph, debug_mode)
+
+    deployed_services = []
+
+    # Deploy services in phases (parallel within phase, sequential between phases)
+    for phase_num, phase_services in enumerate(deployment_phases):
+        if debug_mode:
+            print("📦 Deploying phase {}: {}".format(phase_num + 1, phase_services))
+
+        # Deploy all services in this phase (they can run in parallel)
+        phase_deployments = []
+        for service_name in phase_services:
+            try:
+                service_config = service_configs['services'][service_name]
+                deployment_result = deploy_service(
+                    service_name,
+                    service_config,
+                    namespace,
+                    global_config,
+                    build_local_services,
+                    developer_id,
+                    debug_mode,
+                    tilt_config
+                )
+                phase_deployments.append(deployment_result)
+
+                if debug_mode:
+                    print("✅ Successfully configured deployment for: " + service_name)
+            except Exception as e:
+                fail("❌ Failed to deploy service '{}' in phase {}: {}".format(service_name, phase_num + 1, str(e)))
+
+        deployed_services.extend(phase_deployments)
+
+        # Setup health checks for this phase before proceeding
+        _setup_phase_health_validation(phase_services, namespace, debug_mode)
+
+    # Apply resource dependencies after all services are configured
+    _apply_orchestrated_dependencies(dependency_graph, debug_mode)
+
+    # Setup comprehensive service health monitoring using dedicated health module
+    load('.tilt/lib/health.star', 'setup_comprehensive_health_monitoring', 'create_service_isolation_monitor')
+    setup_comprehensive_health_monitoring(deployed_services, namespace, debug_mode)
+    create_service_isolation_monitor(deployed_services, namespace, debug_mode)
+
+    return deployed_services
+
+def _build_service_dependency_graph(services, service_configs, debug_mode):
+    """Build comprehensive dependency graph for service orchestration"""
+
+    dependency_graph = {}
+    all_services = set(services)
+
+    for service_name in services:
+        if service_name in service_configs['services']:
+            service_config = service_configs['services'][service_name]
+            deps = service_config.get("dependencies", [])
+
+            # Only add dependencies that are also being deployed
+            active_deps = [dep for dep in deps if dep in all_services]
+            dependency_graph[service_name] = active_deps
+
+            if debug_mode and active_deps:
+                print("🔗 Service {} depends on: {}".format(service_name, active_deps))
+        else:
+            dependency_graph[service_name] = []
+
+    return dependency_graph
+
+def _calculate_deployment_phases(dependency_graph, debug_mode):
+    """Calculate deployment phases for parallel deployment of independent services"""
+
+    phases = []
+    remaining_services = set(dependency_graph.keys())
+    deployed_services = set()
+
+    while remaining_services:
+        # Find services that can be deployed in this phase (all dependencies met)
+        current_phase = []
+        for service in list(remaining_services):
+            service_deps = set(dependency_graph[service])
+            if service_deps.issubset(deployed_services):
+                current_phase.append(service)
+
+        if not current_phase:
+            # Circular dependency or missing dependency
+            fail("Cannot resolve dependencies for remaining services: {}".format(list(remaining_services)))
+
+        phases.append(current_phase)
+        remaining_services -= set(current_phase)
+        deployed_services.update(current_phase)
+
+        if debug_mode:
+            print("📋 Phase {}: {} services can deploy in parallel".format(len(phases), len(current_phase)))
+
+    return phases
+
+def _setup_phase_health_validation(phase_services, namespace, debug_mode):
+    """Setup health validation for a deployment phase"""
+
+    if not phase_services:
+        return
+
+    phase_name = "phase-" + "-".join(sorted(phase_services))
+
+    local_resource(
+        phase_name + "-health-check",
+        cmd='''
+        echo "=== Phase Health Check: ''' + ", ".join(phase_services) + ''' ==="
+        for service in ''' + " ".join(phase_services) + '''; do
+            echo "Checking $service..."
+            kubectl wait --for=condition=ready pod -l app=$service -n ''' + namespace + ''' --timeout=60s || echo "Warning: $service not ready"
+        done
+        echo "Phase health check complete"
+        ''',
+        deps=phase_services,
+        labels=["health-check", "phase:" + str(len(phase_services))],
+        auto_init=False,
+        trigger_mode=TRIGGER_MODE_MANUAL
+    )
+
+def _apply_orchestrated_dependencies(dependency_graph, debug_mode):
+    """Apply resource dependencies for orchestrated deployment"""
+
+    for service_name, deps in dependency_graph.items():
+        if deps:
+            # Update k8s resource with dependencies
+            k8s_resource(
+                service_name,
+                resource_deps=deps
+            )
+
+            if debug_mode:
+                print("🔗 Applied dependencies for {}: {}".format(service_name, deps))
+
+def create_deployment_summary(deployed_services, namespace, developer_id):
+    """Create comprehensive deployment summary with orchestration details"""
+
+    # Group services by type for better organization
+    services_by_type = {}
+    for svc in deployed_services:
+        svc_type = svc['type']
+        if svc_type not in services_by_type:
+            services_by_type[svc_type] = []
+        services_by_type[svc_type].append(svc)
+
+    local_resource(
+        'deployment-summary',
+        cmd='''
+        echo "=== MULTI-SERVICE DEPLOYMENT SUMMARY ==="
+        echo "Namespace: ''' + namespace + '''"
+        echo "Developer: ''' + developer_id + '''"
+        echo "Total Services: ''' + str(len(deployed_services)) + '''"
+        echo ""
+        
+        echo "=== SERVICES BY TYPE ==="
+        ''' + '\n'.join([
+            '''
+        echo "{} Services ({}):".format('{}', {})
+        {}'''.format(
+                svc_type.title(),
+                len(services),
+                '\n        '.join([
+                    'echo "  - {} ({}): {}"'.format(
+                        svc['name'],
+                        'Local' if svc['build_locally'] else 'ECR',
+                        ', '.join([str(p) for p in svc['ports']]) if svc['ports'] else 'No ports'
+                    ) for svc in services
+                ])
+            ) for svc_type, services in services_by_type.items()
+        ]) + '''
+        
+        echo ""
+        echo "=== SERVICE ENDPOINTS ==="
+        ''' + '\n'.join([
+            'echo "  - {}: {}"'.format(svc['name'],
+                'http://localhost:{}'.format(svc['ports'][0]) if svc['ports'] and svc['type'] not in ['postgres', 'redis']
+                else 'Internal service'
+            ) for svc in deployed_services
+        ]) + '''
+        
+        echo ""
+        echo "=== QUICK ACCESS ==="
+        echo "Tilt UI: http://localhost:10350"
+        echo "Health Dashboard: Click 'service-health-dashboard' in Tilt UI"
+        echo ""
+        echo "=== DEPLOYMENT ORCHESTRATION ==="
+        echo "✅ Dependency resolution completed"
+        echo "✅ Parallel deployment phases executed"
+        echo "✅ Health monitoring configured"
+        echo "✅ Service discovery enabled"
+        ''',
+        deps=[svc['name'] for svc in deployed_services],
+        labels=['summary', 'deployment', 'orchestration'],
+        auto_init=True
+    )

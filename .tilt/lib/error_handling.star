@@ -24,30 +24,29 @@ def setup_error_handling_system(namespace, services_to_deploy, tilt_config):
 def validate_environment_safety(tilt_config):
     """Validate environment safety with comprehensive error reporting"""
     
-    try:
-        # Validate cluster context
-        current_context = str(local('kubectl config current-context')).strip()
-        
-        # Check for dangerous patterns with detailed error messages
-        dangerous_patterns = [
-            ('prod', 'production environment'),
-            ('production', 'production environment'),
-            ('staging', 'staging environment'),
-            ('stage', 'staging environment'),
-            ('live', 'live environment'),
-            ('release', 'release environment'),
-            ('aws', 'AWS cloud environment'),
-            ('gke', 'Google Kubernetes Engine'),
-            ('aks', 'Azure Kubernetes Service'),
-            ('eks', 'Amazon EKS'),
-            ('.amazonaws.com', 'AWS managed cluster'),
-            ('.gke.', 'Google Cloud managed cluster')
-        ]
-        
-        context_lower = current_context.lower()
-        for pattern, description in dangerous_patterns:
-            if pattern in context_lower:
-                fail("""
+    # Validate cluster context
+    current_context = str(local('kubectl config current-context')).strip()
+
+    # Check for dangerous patterns with detailed error messages
+    dangerous_patterns = [
+        ('prod', 'production environment'),
+        ('production', 'production environment'),
+        ('staging', 'staging environment'),
+        ('stage', 'staging environment'),
+        ('live', 'live environment'),
+        ('release', 'release environment'),
+        ('aws', 'AWS cloud environment'),
+        ('gke', 'Google Kubernetes Engine'),
+        ('aks', 'Azure Kubernetes Service'),
+        ('eks', 'Amazon EKS'),
+        ('.amazonaws.com', 'AWS managed cluster'),
+        ('.gke.', 'Google Cloud managed cluster')
+    ]
+
+    context_lower = current_context.lower()
+    for pattern, description in dangerous_patterns:
+        if pattern in context_lower:
+            fail("""
 🚨 CRITICAL SAFETY VIOLATION: Dangerous cluster context detected!
 
 Context: '{}'
@@ -70,33 +69,9 @@ IMMEDIATE ACTION REQUIRED:
    - Cloud: Use cloud-native deployment methods
 
 SAFETY FIRST: This protection prevents accidental damage to critical environments.
-                """.format(current_context, description, pattern, description))
-        
-        return current_context
-        
-    except Exception as e:
-        fail("""
-🚨 ENVIRONMENT VALIDATION FAILED
+            """.format(current_context, description, pattern, description))
 
-Unable to validate cluster context safety.
-
-Error: {}
-
-TROUBLESHOOTING STEPS:
-1. Verify kubectl is installed and configured:
-   kubectl version --client
-
-2. Check if you have a valid kubeconfig:
-   kubectl config view
-
-3. Ensure you have access to a local Kubernetes cluster:
-   kubectl cluster-info
-
-4. If using Docker Desktop, ensure Kubernetes is enabled
-5. If using kind/k3d, ensure your cluster is running
-
-SAFETY NOTE: Cannot proceed without valid cluster context validation.
-        """.format(str(e)))
+    return current_context
 
 def handle_service_deployment_error(service_name, error, recovery_suggestions=None):
     """Handle service deployment errors with actionable recovery steps"""
@@ -334,8 +309,9 @@ def setup_recovery_resources(namespace, services_to_deploy):
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
         labels=['recovery', 'emergency', 'reset']
-    )def set
-up_error_monitoring(namespace, services_to_deploy):
+    )
+
+def setup_error_monitoring(namespace, services_to_deploy):
     """Setup comprehensive error monitoring resources"""
     
     local_resource(
@@ -716,3 +692,4 @@ def create_error_recovery_dashboard(namespace, services_to_deploy):
         trigger_mode=TRIGGER_MODE_MANUAL,
         labels=['error-recovery', 'dashboard', 'health']
     )
+

@@ -90,33 +90,33 @@ def _setup_service_health_monitoring(namespace, services_to_deploy):
         
         ''' + '\n        '.join([
             '''
-        echo "🔍 Checking service: {}..."
-        POD_STATUS=$(kubectl get pods -n {} -l app={} -o jsonpath='{{.items[0].status.phase}}' 2>/dev/null || echo "NotFound")
-        READY_STATUS=$(kubectl get pods -n {} -l app={} -o jsonpath='{{.items[0].status.conditions[?(@.type=="Ready")].status}}' 2>/dev/null || echo "Unknown")
-        
+        echo "🔍 Checking service: {service_name}..."
+        POD_STATUS=$(kubectl get pods -n {namespace} -l app={service_name} -o jsonpath='{{.items[0].status.phase}}' 2>/dev/null || echo "NotFound")
+        READY_STATUS=$(kubectl get pods -n {namespace} -l app={service_name} -o jsonpath='{{.items[0].status.conditions[?(@.type=="Ready")].status}}' 2>/dev/null || echo "Unknown")
+
         if [ "$POD_STATUS" = "Running" ] && [ "$READY_STATUS" = "True" ]; then
-            echo "  ✅ {}: Running and Ready"
+            echo "  ✅ {service_name}: Running and Ready"
         elif [ "$POD_STATUS" = "Running" ]; then
-            echo "  ⚠️  {}: Running but not Ready"
+            echo "  ⚠️  {service_name}: Running but not Ready"
             OVERALL_STATUS="⚠️  DEGRADED"
         elif [ "$POD_STATUS" = "Pending" ]; then
-            echo "  🔄 {}: Starting up..."
+            echo "  🔄 {service_name}: Starting up..."
             OVERALL_STATUS="🔄 STARTING"
         else
-            echo "  ❌ {}: $POD_STATUS"
+            echo "  ❌ {service_name}: $POD_STATUS"
             OVERALL_STATUS="❌ UNHEALTHY"
         fi
         
         # Show resource usage if available
-        RESOURCE_USAGE=$(kubectl top pod -n {} -l app={} --no-headers 2>/dev/null | awk '{{print "CPU: " $2 ", Memory: " $3}}' || echo "Metrics unavailable")
+        RESOURCE_USAGE=$(kubectl top pod -n {namespace} -l app={service_name} --no-headers 2>/dev/null | awk '{{print "CPU: " $2 ", Memory: " $3}}' || echo "Metrics unavailable")
         echo "     Resources: $RESOURCE_USAGE"
         
         # Show recent events
-        RECENT_EVENTS=$(kubectl get events -n {} --field-selector involvedObject.name={} --sort-by='.lastTimestamp' --no-headers 2>/dev/null | tail -1 | awk '{{print $6 " " $7 " " $8 " " $9 " " $10}}' || echo "No recent events")
+        RECENT_EVENTS=$(kubectl get events -n {namespace} --field-selector involvedObject.name={service_name} --sort-by='.lastTimestamp' --no-headers 2>/dev/null | tail -1 | awk '{{print $6 " " $7 " " $8 " " $9 " " $10}}' || echo "No recent events")
         if [ "$RECENT_EVENTS" != "No recent events" ]; then
             echo "     Latest: $RECENT_EVENTS"
         fi
-        echo ""'''.format(service, namespace, service, namespace, service, service, service, service, namespace, service, namespace, service) 
+        echo ""'''.format(service_name=service, namespace=namespace)
             for service in services_to_deploy
         ]) + '''
         
@@ -226,36 +226,6 @@ def _setup_validation_resources(namespace, services_to_deploy):
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
         labels=['validation', 'k8s-resources']
-    )
-    
-    # Resource monitoring with enhanced metrics
-    local_resource(
-        'resource-monitor',
-        cmd='''
-        echo "=== RESOURCE MONITORING ==="
-        echo "Cluster Nodes:"
-        kubectl top nodes 2>/dev/null || echo "Node metrics not available (metrics-server may not be installed)"
-        echo ""
-        
-        echo "Namespace Pods:"
-        kubectl top pods -n ''' + namespace + ''' 2>/dev/null || echo "Pod metrics not available"
-        echo ""
-        
-        echo "Resource Quotas:"
-        kubectl get resourcequota -n ''' + namespace + ''' 2>/dev/null || echo "No resource quotas set"
-        echo ""
-        
-        echo "Persistent Volumes:"
-        kubectl get pv 2>/dev/null || echo "No persistent volumes"
-        echo ""
-        
-        echo "Storage Classes:"
-        kubectl get storageclass 2>/dev/null || echo "No storage classes"
-        ''',
-        deps=[],
-        auto_init=False,
-        trigger_mode=TRIGGER_MODE_MANUAL,
-        labels=['monitoring', 'resources']
     )
     
     # Manifest validation resource
@@ -409,19 +379,18 @@ def setup_service_dashboard(deployed_services, namespace):
     if not deployed_services:
         return
     
-    local_resource(
-        'service-dashboard',
-        cmd='''
-        clear
-        echo "🎛️  SERVICE DASHBOARD"
-        echo "===================="
-        echo "Namespace: ''' + namespace + '''"
-        echo "Services: ''' + str(len(deployed_services)) + '''"
-        echo "Updated: $(date)"
-        echo ""
-        
-        ''' + '\n        '.join([
-            '''
+    # Generate service status commands for each deployed service
+    service_commands = []
+    for svc in deployed_services:
+        # Generate endpoint display logic for this specific service
+        endpoint_lines = []
+        for port in svc.get('ports', []):
+            if svc.get('type') not in ['postgres', 'redis']:
+                endpoint_lines.append('echo "   Endpoint: http://localhost:{}"'.format(port))
+
+        endpoint_display = '\n        '.join(endpoint_lines) if endpoint_lines else ''
+
+        service_cmd = '''
         echo "📦 SERVICE: {}"
         echo "   Type: {} | Build: {} | Ports: {}"
         
@@ -440,28 +409,39 @@ def setup_service_dashboard(deployed_services, namespace):
         fi
         
         # Show endpoints
-        ''' + '\n        '.join([
-            'echo "   Endpoint: http://localhost:{}"'.format(port) 
-            for port in svc.get('ports', []) if svc.get('type') not in ['postgres', 'redis']
-        ] if 'svc' in locals() else []) + '''
-        
+        {}
+
         # Show resource usage
         RESOURCE_USAGE=$(kubectl top pod -n {} -l app={} --no-headers 2>/dev/null | awk '{{print $2 " CPU, " $3 " Memory"}}' || echo "Metrics unavailable")
         echo "   Resources: $RESOURCE_USAGE"
         echo ""'''.format(
-                svc['name'], 
-                svc['type'], 
-                'Local' if svc['build_locally'] else 'ECR',
-                ', '.join([str(p) for p in svc['ports']]) if svc['ports'] else 'None',
-                namespace, 
-                svc['name'],
-                namespace, 
-                svc['name'],
-                namespace, 
-                svc['name']
-            ) for svc in deployed_services
-        ]) + '''
-        
+            svc['name'],
+            svc['type'],
+            'Local' if svc['build_locally'] else 'ECR',
+            ', '.join([str(p) for p in svc['ports']]) if svc['ports'] else 'None',
+            namespace,
+            svc['name'],
+            namespace,
+            svc['name'],
+            endpoint_display,
+            namespace,
+            svc['name']
+        )
+        service_commands.append(service_cmd)
+
+    local_resource(
+        'service-dashboard',
+        cmd='''
+        clear
+        echo "🎛️  SERVICE DASHBOARD"
+        echo "===================="
+        echo "Namespace: ''' + namespace + '''"
+        echo "Services: ''' + str(len(deployed_services)) + '''"
+        echo "Updated: $(date)"
+        echo ""
+
+        ''' + '\n        '.join(service_commands) + '''
+
         echo "🔗 QUICK ACTIONS"
         echo "==============="
         echo "• View individual service: Click '<service-name>-monitor'"

@@ -3,11 +3,15 @@ Configuration management for Tilt development environment
 Handles configuration parsing, validation, and defaults
 """
 
+# Load required modules at top level (required by Starlark)
+load('error_handling.star', 'warn_configuration_issue')
+
 def parse_tilt_config():
     """Parse and validate Tilt configuration with sensible defaults and service customization support"""
     
-    # Define configuration schema
-    config.define_string_list("services", args=True, usage="List of services to deploy")
+    # Define configuration schema with proper Tilt config syntax
+    # Only enable_services should be positional (args=True), all others are named flags
+    config.define_string_list("enable_services", args=True, usage="List of services to deploy")
     config.define_string("developer_id", args=False, usage="Developer identifier for namespace isolation")
     config.define_string("cluster_type", args=False, usage="Local cluster type: kind|k3d|docker-desktop")
     config.define_bool("enable_debug", args=False, usage="Enable debug mode with verbose logging")
@@ -16,9 +20,12 @@ def parse_tilt_config():
     config.define_string_list("ecr_versions", args=False, usage="ECR image versions in format service:version")
     config.define_string_list("env_overrides", args=False, usage="Environment variable overrides in format service:VAR=value")
     config.define_string("build_strategy", args=False, usage="Default build strategy: local|ecr|mixed")
-    
+
     # Parse configuration
     cfg = config.parse()
+    
+    # Load developer configuration if available
+    developer_config = _load_developer_config()
     
     # Parse ECR version specifications
     ecr_version_map = {}
@@ -38,17 +45,17 @@ def parse_tilt_config():
                     env_override_map[service_part] = {}
                 env_override_map[service_part][var_name] = var_value
     
-    # Build configuration object with defaults
+    # Build configuration object with defaults, merging developer config
     tilt_config = {
-        "developer_id": cfg.get("developer_id", os.environ.get("USER", "dev")),
-        "services_to_deploy": cfg.get("services", []),
-        "debug_mode": cfg.get("enable_debug", False),
-        "build_local_services": cfg.get("build_local", []),
+        "developer_id": cfg.get("developer_id", developer_config.get("developer_id", os.environ.get("USER", "dev"))),
+        "services_to_deploy": cfg.get("enable_services", developer_config.get("services_to_deploy", [])),
+        "debug_mode": cfg.get("enable_debug", developer_config.get("debug_mode", False)),
+        "build_local_services": cfg.get("build_local", developer_config.get("build_local_services", [])),
         "disabled_services": cfg.get("disable_services", []),
         "ecr_versions": ecr_version_map,
         "env_overrides": env_override_map,
-        "build_strategy": cfg.get("build_strategy", "ecr"),
-        "cluster_type": cfg.get("cluster_type", "docker-desktop"),
+        "build_strategy": cfg.get("build_strategy", developer_config.get("build_strategy", "ecr")),
+        "cluster_type": cfg.get("cluster_type", developer_config.get("cluster_type", "kind")),
     }
     
     # Add computed values
@@ -85,13 +92,11 @@ SETUP REQUIRED:
 
 2. Or create a minimal configuration:
    mkdir -p .tilt
-   cat > .tilt/service-config.yaml << 'EOF'
-   services: {{}}
-   global:
-     default_resources:
-       cpu: "100m"
-       memory: "128Mi"
-   EOF
+   echo 'services: {}' > .tilt/service-config.yaml
+   echo 'global:' >> .tilt/service-config.yaml
+   echo '  default_resources:' >> .tilt/service-config.yaml
+   echo '    cpu: "100m"' >> .tilt/service-config.yaml
+   echo '    memory: "128Mi"' >> .tilt/service-config.yaml
 
 3. Add your services to the configuration file
 
@@ -103,32 +108,11 @@ DOCUMENTATION:
 Cannot proceed without valid service configuration.
         """.format(config_path))
     
-    try:
-        service_configs = read_yaml(config_path)
-    except Exception as e:
-        fail("""
-🚨 CONFIGURATION ERROR: Invalid YAML in service configuration
-
-File: {}
-Error: {}
-
-YAML VALIDATION STEPS:
-1. Check YAML syntax: yamllint {}
-2. Verify proper indentation (use spaces, not tabs)
-3. Ensure all strings are properly quoted
-4. Check for missing colons or brackets
-
-COMMON YAML ISSUES:
-• Missing quotes around strings with special characters
-• Incorrect indentation (YAML is indentation-sensitive)
-• Missing colons after keys
-• Unclosed brackets or quotes
-
-FIX: Correct the YAML syntax errors and try again.
-        """.format(config_path, str(e), config_path))
+    # Read YAML configuration (Tilt will handle errors automatically)
+    service_configs = read_yaml(config_path)
     
     # Validate required structure with detailed error messages
-    if not isinstance(service_configs, dict):
+    if not type(service_configs) == "dict":
         fail("""
 🚨 CONFIGURATION ERROR: Service configuration must be a YAML object
 
@@ -146,8 +130,8 @@ global:
     memory: "128Mi"
 
 FIX: Ensure the root level of your YAML file is a dictionary.
-        """.format(config_path, type(service_configs).__name__))
-    
+        """.format(config_path, type(service_configs)))
+
     if 'services' not in service_configs:
         fail("""
 🚨 CONFIGURATION ERROR: Missing 'services' section
@@ -190,7 +174,7 @@ FIX: Add a 'global' section with default configuration values.
         """.format(config_path))
     
     # Validate services structure
-    if not isinstance(service_configs['services'], dict):
+    if not type(service_configs['services']) == "dict":
         fail("""
 🚨 CONFIGURATION ERROR: Invalid 'services' section format
 
@@ -249,64 +233,66 @@ AVAILABLE SERVICES: {}
             ', '.join(available_services)
         ))
     
-    # Validate service configurations with detailed error reporting
-    validation_errors = []
+    # Validate service configurations (Tilt will handle errors automatically)
     for service_name in services_to_deploy:
-        try:
-            _validate_service_config(service_name, service_configs['services'][service_name])
-        except Exception as e:
-            validation_errors.append("Service '{}': {}".format(service_name, str(e)))
-    
-    if validation_errors:
-        fail("""
-🚨 SERVICE VALIDATION ERRORS: Configuration issues found
-
-Validation errors:
-{}
-
-COMMON FIXES:
-1. Check required fields: type, build_context, ecr_image
-2. Verify service types: python, java, go, nodejs, postgres, redis
-3. Ensure ports are integers: ports: [8080, 8081]
-4. Check dependencies exist: dependencies: ["database", "redis"]
-
-DOCUMENTATION: See SERVICE_CONFIGURATION_GUIDE.md for detailed examples.
-        """.format('\n'.join(['• {}'.format(error) for error in validation_errors])))
+        _validate_service_config(service_name, service_configs['services'][service_name])
     
     return True
 
 def _validate_service_config(service_name, service_config):
     """Validate individual service configuration with comprehensive error reporting"""
     
-    if not isinstance(service_config, dict):
-        raise Exception("Configuration must be a dictionary, got {}".format(type(service_config).__name__))
-    
-    # Check required fields
-    required_fields = ['type', 'build_context', 'ecr_image']
-    missing_fields = [field for field in required_fields if field not in service_config]
-    
-    if missing_fields:
-        raise Exception("""Missing required fields: {}
+    if not type(service_config) == "dict":
+        fail("Configuration must be a dictionary, got {}".format(type(service_config)))
 
-REQUIRED CONFIGURATION:
+    # Check required fields based on service type
+    service_type = service_config.get('type', '')
+
+    if service_type == 'external':
+        # External services (databases, etc.) require 'image' instead of 'build_context' and 'ecr_image'
+        required_fields = ['type', 'image']
+        missing_fields = [field for field in required_fields if field not in service_config]
+
+        if missing_fields:
+            fail("""Missing required fields for external service: {}
+
+REQUIRED CONFIGURATION FOR EXTERNAL SERVICE:
+{}:
+  type: "external"         # Service type
+  image: "postgres:15"     # Docker image reference
+  ports: [5432]           # Optional: service ports
+  dependencies: []        # Optional: service dependencies
+  env_vars:               # Optional: environment variables
+    - name: "VAR_NAME"
+      value: "value"
+            """.format(missing_fields, service_name))
+    else:
+        # Application services require 'build_context' and optionally 'ecr_image'
+        # ECR image is only required if not building locally
+        required_fields = ['type', 'build_context']
+        missing_fields = [field for field in required_fields if field not in service_config]
+
+        if missing_fields:
+            fail("""Missing required fields for application service: {}
+
+REQUIRED CONFIGURATION FOR APPLICATION SERVICE:
 {}:
   type: "python"           # Service type
   build_context: "./path"  # Path to service code
-  ecr_image: "repo/name"   # ECR image reference
+  # ecr_image: "repo/name" # Optional: ECR image reference (required only if not building locally)
   ports: [8080]           # Optional: service ports
   dependencies: []        # Optional: service dependencies
-        """.format(missing_fields, service_name))
-    
+            """.format(missing_fields, service_name))
+
     # Validate service type
-    valid_types = ['python', 'java', 'go', 'nodejs', 'postgres', 'redis', 'mongodb', 'mysql', 'generic']
-    service_type = service_config['type']
+    valid_types = ['python', 'java', 'go', 'nodejs', 'external', 'postgres', 'redis', 'mongodb', 'mysql', 'generic']
     if service_type not in valid_types:
-        raise Exception("""Invalid service type: '{}'
+        fail("""Invalid service type: '{}'
 
 VALID TYPES:
-• Application types: python, java, go, nodejs
-• Database types: postgres, redis, mongodb, mysql
-• Generic type: generic
+• Application types: python, java, go, nodejs, generic
+• External service type: external
+• Legacy database types: postgres, redis, mongodb, mysql (use 'external' instead)
 
 EXAMPLE:
 {}:
@@ -314,58 +300,79 @@ EXAMPLE:
   # ... rest of configuration
         """.format(service_type, service_name))
     
-    # Validate build_context exists
-    build_context = service_config['build_context']
-    if not os.path.exists(build_context):
-        # This is a warning, not a fatal error, as the path might be created later
-        load('.tilt/lib/error_handling.star', 'warn_configuration_issue')
-        warn_configuration_issue(
-            service_name,
-            "Build context path '{}' does not exist".format(build_context),
-            "Ensure the service code directory exists or will be created before deployment"
-        )
-    
+    # Validate build_context exists (only for non-external services)
+    if service_type != 'external' and 'build_context' in service_config:
+        build_context = service_config['build_context']
+        if not os.path.exists(build_context):
+            # This is a warning, not a fatal error, as the path might be created later
+            warn_configuration_issue(
+                service_name,
+                "Build context path '{}' does not exist".format(build_context),
+                "Ensure the service code directory exists or will be created before deployment"
+            )
+
     # Validate ports if specified
     if 'ports' in service_config:
         ports = service_config['ports']
-        if not isinstance(ports, list):
-            raise Exception("Ports must be a list, got {}. Example: ports: [8080, 8081]".format(type(ports).__name__))
-        
-        if not all(isinstance(p, int) for p in ports):
-            invalid_ports = [p for p in ports if not isinstance(p, int)]
-            raise Exception("All ports must be integers. Invalid ports: {}".format(invalid_ports))
+        if not type(ports) == "list":
+            fail("Ports must be a list, got {}. Example: ports: [8080, 8081]".format(type(ports)))
+
+        # Check if all ports are integers
+        invalid_ports = []
+        for p in ports:
+            if not type(p) == "int":
+                invalid_ports.append(p)
+        if invalid_ports:
+            fail("All ports must be integers. Invalid ports: {}".format(invalid_ports))
         
         # Check for valid port ranges
-        invalid_ports = [p for p in ports if p < 1 or p > 65535]
-        if invalid_ports:
-            raise Exception("Ports must be between 1 and 65535. Invalid ports: {}".format(invalid_ports))
+        invalid_range_ports = []
+        for p in ports:
+            if p < 1 or p > 65535:
+                invalid_range_ports.append(p)
+        if invalid_range_ports:
+            fail("Ports must be between 1 and 65535. Invalid ports: {}".format(invalid_range_ports))
         
         # Check for port conflicts within the service
-        if len(ports) != len(set(ports)):
-            duplicate_ports = [p for p in ports if ports.count(p) > 1]
-            raise Exception("Duplicate ports not allowed: {}".format(list(set(duplicate_ports))))
+        seen_ports = {}
+        duplicate_ports = []
+        for p in ports:
+            if p in seen_ports:
+                if p not in duplicate_ports:
+                    duplicate_ports.append(p)
+            else:
+                seen_ports[p] = True
+        if duplicate_ports:
+            fail("Duplicate ports not allowed: {}".format(duplicate_ports))
     
     # Validate dependencies if specified
     if 'dependencies' in service_config:
         dependencies = service_config['dependencies']
-        if not isinstance(dependencies, list):
-            raise Exception("Dependencies must be a list, got {}. Example: dependencies: ['database', 'redis']".format(type(dependencies).__name__))
-        
-        if not all(isinstance(dep, str) for dep in dependencies):
-            invalid_deps = [dep for dep in dependencies if not isinstance(dep, str)]
-            raise Exception("All dependencies must be strings. Invalid dependencies: {}".format(invalid_deps))
+        if not type(dependencies) == "list":
+            fail("Dependencies must be a list, got {}. Example: dependencies: ['database', 'redis']".format(type(dependencies)))
+
+        # Check if all dependencies are strings
+        invalid_deps = []
+        for dep in dependencies:
+            if not type(dep) == "string":
+                invalid_deps.append(dep)
+        if invalid_deps:
+            fail("All dependencies must be strings. Invalid dependencies: {}".format(invalid_deps))
     
     # Validate resources if specified
     if 'resources' in service_config:
         resources = service_config['resources']
-        if not isinstance(resources, dict):
-            raise Exception("Resources must be a dictionary. Example: resources: {{cpu: '100m', memory: '128Mi'}}")
+        if not type(resources) == "dict":
+            fail("Resources must be a dictionary. Example: resources: {cpu: '100m', memory: '128Mi'}")
         
         # Check for valid resource keys
         valid_resource_keys = ['cpu', 'memory', 'storage']
-        invalid_keys = [key for key in resources.keys() if key not in valid_resource_keys]
+        invalid_keys = []
+        for key in resources.keys():
+            if key not in valid_resource_keys:
+                invalid_keys.append(key)
         if invalid_keys:
-            raise Exception("Invalid resource keys: {}. Valid keys: {}".format(invalid_keys, valid_resource_keys))
+            fail("Invalid resource keys: {}. Valid keys: {}".format(invalid_keys, valid_resource_keys))
 
 def get_service_selection_info(service_configs):
     """Get information about available services for selection"""
@@ -395,8 +402,8 @@ def _generate_service_description(name, config):
     desc = "{} service".format(service_type.title())
     
     if ports:
-        desc += " (ports: {})".format(', '.join(map(str, ports)))
-    
+        desc += " (ports: {})".format(', '.join([str(p) for p in ports]))
+
     if deps:
         desc += " - depends on: {}".format(', '.join(deps))
     
@@ -494,7 +501,7 @@ def apply_service_customizations(service_name, service_config, tilt_config):
         # Create a map of existing env vars for easy lookup
         env_var_map = {}
         for i, env_var in enumerate(env_vars):
-            if isinstance(env_var, dict) and "name" in env_var:
+            if type(env_var) == "dict" and "name" in env_var:
                 env_var_map[env_var["name"]] = i
         
         # Apply overrides
@@ -538,6 +545,41 @@ def get_effective_build_strategy(service_name, service_config, tilt_config):
     
     # Default to ECR
     return "ecr"
+
+def _load_developer_config():
+    """Load developer configuration from YAML file with fallback to defaults"""
+    
+    config_path = '.tilt/developer-config.yaml'
+    
+    # Return empty config if file doesn't exist
+    if not os.path.exists(config_path):
+        return {}
+    
+    # Read developer configuration (return empty dict if file has issues)
+    dev_config = read_yaml(config_path)
+    
+    # Extract and flatten configuration
+    result = {}
+    
+    if 'developer' in dev_config and 'id' in dev_config['developer']:
+        result['developer_id'] = dev_config['developer']['id']
+    
+    if 'cluster' in dev_config and 'type' in dev_config['cluster']:
+        result['cluster_type'] = dev_config['cluster']['type']
+    
+    if 'services' in dev_config:
+        services_config = dev_config['services']
+        if 'enabled' in services_config:
+            result['services_to_deploy'] = services_config['enabled']
+        if 'build_locally' in services_config:
+            result['build_local_services'] = services_config['build_locally']
+    
+    if 'preferences' in dev_config:
+        prefs = dev_config['preferences']
+        if 'debug_mode' in prefs:
+            result['debug_mode'] = prefs['debug_mode']
+    
+    return result
 
 def create_service_customization_dashboard(tilt_config, service_configs):
     """Create a dashboard showing current service customizations"""

@@ -3,11 +3,131 @@ External service and dependency management
 Handles deployment of databases, message queues, cache services, and mock services
 """
 
-load('.tilt/lib/k8s_manifests.star', 'generate_k8s_manifests')
-load('.tilt/lib/config_secrets.star', 'create_service_configmap', 'create_service_secret')
+def generate_k8s_manifests(service_name, service_config, namespace, image_name, global_config, developer_id):
+    """Generate basic Kubernetes manifests - simplified version for external services"""
 
-# Import json for mock service configuration
-import json
+    ports = service_config.get("ports", [8080])
+    env_vars = service_config.get("env_vars", [])
+    resources = service_config.get("resources", {"cpu": "100m", "memory": "128Mi"})
+
+    # Generate basic deployment and service manifests
+    deployment_yaml = """apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {service_name}
+  namespace: {namespace}
+  labels:
+    app: {service_name}
+    developer: {developer_id}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {service_name}
+  template:
+    metadata:
+      labels:
+        app: {service_name}
+        developer: {developer_id}
+    spec:
+      containers:
+      - name: {service_name}
+        image: {image_name}
+        ports:
+{port_config}
+        resources:
+          requests:
+            cpu: {cpu}
+            memory: {memory}
+          limits:
+            cpu: {cpu}
+            memory: {memory}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {service_name}
+  namespace: {namespace}
+  labels:
+    app: {service_name}
+    developer: {developer_id}
+spec:
+  selector:
+    app: {service_name}
+  ports:
+{service_ports}
+  type: ClusterIP
+""".format(
+        service_name=service_name,
+        namespace=namespace,
+        developer_id=developer_id,
+        image_name=image_name,
+        port_config='\n'.join(['        - containerPort: {}'.format(port) for port in ports]),
+        service_ports='\n'.join(['  - port: {}\n    targetPort: {}'.format(port, port) for port in ports]),
+        cpu=resources.get("cpu", "100m"),
+        memory=resources.get("memory", "128Mi")
+    )
+
+    return deployment_yaml
+
+def create_service_configmap(service_name, service_config, namespace, debug_mode):
+    """Create ConfigMap for service configuration"""
+
+    env_vars = service_config.get("env_vars", [])
+    configmap_data = {}
+
+    for env_var in env_vars:
+        if env_var.get("from_configmap", False):
+            key = env_var["name"].lower().replace("_", "_")
+            configmap_data[key] = env_var["value"]
+
+    if configmap_data:
+        configmap_yaml = """apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {service_name}-config
+  namespace: {namespace}
+  labels:
+    app: {service_name}
+data:
+{data}
+""".format(
+            service_name=service_name,
+            namespace=namespace,
+            data='\n'.join(['  {}: "{}"'.format(k, v) for k, v in configmap_data.items()])
+        )
+
+        k8s_yaml(configmap_yaml)
+
+def create_service_secret(service_name, service_config, namespace, debug_mode):
+    """Create Secret for sensitive service configuration"""
+
+    env_vars = service_config.get("env_vars", [])
+    secret_data = {}
+
+    for env_var in env_vars:
+        if env_var.get("from_secret", False):
+            key = env_var["name"].lower().replace("_", "_")
+            secret_data[key] = env_var["value"]
+
+    if secret_data:
+        secret_yaml = """apiVersion: v1
+kind: Secret
+metadata:
+  name: {service_name}-secret
+  namespace: {namespace}
+  labels:
+    app: {service_name}
+type: Opaque
+stringData:
+{data}
+""".format(
+            service_name=service_name,
+            namespace=namespace,
+            data='\n'.join(['  {}: "{}"'.format(k, v) for k, v in secret_data.items()])
+        )
+
+        k8s_yaml(secret_yaml)
 
 def deploy_external_services(external_services, namespace, global_config, developer_id, debug_mode=False):
     """Deploy external services like databases, queues, and mock services"""
@@ -246,8 +366,8 @@ def deploy_generic_external_service(service_name, service_config, namespace, glo
         "ports": ports,
         "developer_id": developer_id
     }
-d
-ef _create_postgres_config(service_config, developer_id):
+
+def _create_postgres_config(service_config, developer_id):
     """Create PostgreSQL configuration with developer isolation"""
     
     db_name = "devdb_" + developer_id.replace("-", "_")
@@ -696,8 +816,8 @@ spec:
         cpu=rabbitmq_config["resources"]["cpu"],
         memory=rabbitmq_config["resources"]["memory"]
     )
-de
-f _generate_mock_service_manifests(service_name, mock_config, namespace, developer_id):
+
+def _generate_mock_service_manifests(service_name, mock_config, namespace, developer_id):
     """Generate mock service Kubernetes manifests"""
     
     labels = """    app: {}
@@ -882,7 +1002,7 @@ spec:
         labels=labels,
         port=port,
         developer_id=developer_id,
-        endpoints=json.dumps(mock_config["mock_endpoints"]),
+        endpoints=str(mock_config["mock_endpoints"]),
         cpu=mock_config["resources"]["cpu"],
         memory=mock_config["resources"]["memory"]
     )
@@ -1153,7 +1273,7 @@ def _setup_mock_service_endpoints(service_name, mock_config, namespace, develope
             echo "✅ Mock service is accessible"
             
             # Test health endpoint
-            HEALTH_RESPONSE=$(curl -s http://localhost:{}/health 2>/dev/null || echo "unavailable")
+            HEALTH_RESPONSE=$(curl -s http://localhost:{{}}/health 2>/dev/null || echo "unavailable")
             if [ "$HEALTH_RESPONSE" != "unavailable" ]; then
                 echo "✅ Health endpoint responding"
                 echo "Response: $HEALTH_RESPONSE"
@@ -1286,3 +1406,4 @@ def setup_external_service_monitoring(deployed_externals, namespace, developer_i
         auto_init=True,
         trigger_mode=TRIGGER_MODE_MANUAL
     )
+

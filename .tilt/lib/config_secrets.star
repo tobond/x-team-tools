@@ -25,12 +25,22 @@ def create_service_configmap(service_name, service_config, namespace, debug_mode
     config_data.update(_get_type_specific_config(service_type, service_config))
     
     if config_data:
-        configmap_create(
-            service_name + "-config",
-            namespace=namespace,
-            from_dict=config_data
-        )
-        
+        # Use Tilt's built-in configmap_create function instead of raw YAML
+        configmap_name = service_name + "-config"
+
+        # Create the ConfigMap using Tilt's extension
+        k8s_yaml(blob("""apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {}
+  namespace: {}
+data:
+{}""".format(
+            configmap_name,
+            namespace,
+            "\n".join(["  {}: \"{}\"".format(k, v) for k, v in config_data.items()])
+        )))
+
         if debug_mode:
             print("Created ConfigMap for service: " + service_name)
             print("ConfigMap data keys: " + str(list(config_data.keys())))
@@ -56,14 +66,23 @@ def create_service_secret(service_name, service_config, namespace, debug_mode=Fa
     
     # Add developer-specific secrets
     secret_data.update(_get_developer_specific_secrets(developer_id, service_name))
-    
+
     if secret_data:
-        secret_create_generic(
+        # Create Secret using Tilt's k8s_yaml with properly formatted manifest
+        # For development, we'll use stringData instead of data to avoid base64 encoding
+        k8s_yaml(blob("""apiVersion: v1
+kind: Secret
+metadata:
+  name: {}
+  namespace: {}
+type: Opaque
+stringData:
+{}""".format(
             service_name + "-secret",
-            namespace=namespace,
-            from_dict=secret_data
-        )
-        
+            namespace,
+            "\n".join(["  {}: \"{}\"".format(k, v) for k, v in secret_data.items()])
+        )))
+
         if debug_mode:
             print("Created Secret for service: " + service_name)
             print("Secret data keys: " + str(list(secret_data.keys())))
@@ -178,14 +197,10 @@ def _get_developer_specific_secrets(developer_id, service_name):
     # Load developer-specific secrets from file if exists
     developer_secrets_file = ".tilt/secrets/" + developer_id + ".yaml"
     if os.path.exists(developer_secrets_file):
-        try:
-            developer_secrets = read_yaml(developer_secrets_file)
-            if isinstance(developer_secrets, dict):
-                secret_data.update(developer_secrets.get("secrets", {}))
-        except:
-            # If file exists but can't be read, continue with defaults
-            pass
-    
+        developer_secrets = read_yaml(developer_secrets_file)
+        if type(developer_secrets) == "dict":
+            secret_data.update(developer_secrets.get("secrets", {}))
+
     return secret_data
 
 def create_developer_secret_template(developer_id, namespace, debug_mode=False):

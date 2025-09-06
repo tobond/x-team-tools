@@ -2,12 +2,9 @@
 # Copy this file to developer-config.yaml and customize for your environment
 
 developer:
-  # Your developer ID (used for namespace isolation)
+  # Your developer ID (for identification and state management)
   # Use lowercase letters, numbers, and hyphens only
   id: "your-name"
-  
-  # Optional: Custom namespace (will be auto-generated if not specified)
-  # namespace: "dev-your-name"
 
 cluster:
   # Type of Kubernetes cluster to use
@@ -40,14 +37,8 @@ services:
     - api-gateway
     - notification-service
 
-# Optional: Resource limits for your namespace
+# Optional: Default resource requests/limits for services
 resources:
-  namespace_quota:
-    cpu: "4"
-    memory: "8Gi"
-    storage: "20Gi"
-    
-  # Default resource requests/limits for services
   default_resources:
     requests:
       cpu: "100m"

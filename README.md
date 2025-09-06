@@ -43,7 +43,7 @@ See **[DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md)** for a complete list of 
 ### Tilt-Based Development Environment
 - **Multi-language support**: Python, Java, Go, Node.js, CrewAI services
 - **Live updates**: Code changes deployed in seconds
-- **Developer isolation**: Each developer gets their own Kubernetes namespace
+- **Local isolation**: Each developer runs their own isolated local Kubernetes cluster
 - **Flexible image sources**: ECR registry, local Docker builds, or live source builds
 - **Production parity**: Uses Kubernetes patterns that mirror production
 
