@@ -2,7 +2,7 @@
 
 ## Overview
 
-The local development environment system will use Tilt as the orchestration layer to manage a local Kubernetes cluster where developers can deploy any combination of applications (Python, Java, Go, Node.js, CrewAI services, etc.). The system will create its own Kubernetes manifests specifically for local development, supports multiple image sources (ECR, local Docker, live builds), and provides a simple local development environment. Since each developer runs their own local cluster, isolation is built-in by default.
+The local development environment system is a **Service Import/Integration Platform** that uses Tilt as the orchestration layer to manage a local Kubernetes cluster where developers can import and deploy any combination of existing applications from various sources (Git repositories, local directories). The system supports Python, Java, Go, Node.js, CrewAI services, and more. It provides comprehensive automation for service discovery, import, configuration generation, and management through dedicated scripts. The system creates its own Kubernetes manifests specifically for local development, supports multiple image sources (ECR, local Docker, live builds), and organizes imported services in a structured `services/` directory. Since each developer runs their own local cluster, isolation is built-in by default.
 
 ## Architecture
 
@@ -10,15 +10,31 @@ The local development environment system will use Tilt as the orchestration laye
 
 ```mermaid
 graph TB
-    Dev[Developer Workstation] --> Tilt[Tilt Engine]
+    Dev[Developer Workstation] --> ImportScripts[Service Import Scripts]
+    ImportScripts --> ServiceRepo[Git Repositories]
+    ImportScripts --> LocalServices[services/ Directory]
+    
+    LocalServices --> Tilt[Tilt Engine]
     Tilt --> K8s[Local Kubernetes Cluster]
     Tilt --> Docker[Docker Registry/ECR]
-    Tilt --> Helm[Helm Charts]
+    
+    subgraph "Service Management Scripts"
+        Import[import-service.sh]
+        List[list-services.sh]
+        Info[service-info.sh]
+        Setup[setup-environment.sh]
+    end
+    
+    subgraph "services/ Directory"
+        SVC1[Imported Service 1]
+        SVC2[Imported Service 2]
+        SVCN[Imported Service N]
+    end
     
     subgraph "Local K8s Cluster"
-        SVC1[CrewAI Service 1]
-        SVC2[CrewAI Service 2]
-        SVCN[CrewAI Service N]
+        DEPLOY1[Deployed Service 1]
+        DEPLOY2[Deployed Service 2]
+        DEPLOYN[Deployed Service N]
         DB[Local Database]
         QUEUE[Message Queue]
         MOCK[Mock Services]
@@ -31,12 +47,14 @@ graph TB
 
 ### Component Architecture
 
-1. **Tilt Engine**: Central orchestrator managing builds, deployments, and monitoring
-2. **Local Kubernetes Cluster**: Isolated environment using kind/k3d/Docker Desktop
-3. **Local Kubernetes Manifests**: Creates development-specific Kubernetes manifests or simple Helm charts
-4. **Image Management**: Handles ECR pulls, local builds, and Docker registry integration
-5. **Simple Local Environment**: Each developer runs their own isolated local cluster
-6. **Service Discovery**: Kubernetes-native service discovery and networking
+1. **Service Import/Integration Platform**: Comprehensive system for importing and managing existing services
+2. **Tilt Engine**: Central orchestrator managing builds, deployments, and monitoring for imported services
+3. **Local Kubernetes Cluster**: Isolated environment using kind/k3d/Docker Desktop
+4. **Service Management Scripts**: Automated tools for service import, discovery, configuration, and environment management
+5. **services/ Directory Structure**: Organized storage for imported services with clear separation
+6. **Local Kubernetes Manifests**: Creates development-specific Kubernetes manifests for imported services
+7. **Image Management**: Handles ECR pulls, local builds, and Docker registry integration
+8. **Service Discovery**: Kubernetes-native service discovery and networking
 
 ## Components and Interfaces
 
@@ -57,7 +75,7 @@ The Tilt configuration follows a modular architecture with clear separation of c
 
 #### Main Tiltfile Structure
 ```python
-# Main Tiltfile - Orchestration only (150 lines)
+# Main Tiltfile - Orchestration only (192 lines)
 load('ext://namespace', 'namespace_create')
 load('ext://configmap', 'configmap_create')
 load('ext://secret', 'secret_create_generic')
@@ -123,17 +141,19 @@ main()
 
 ### Service Configuration Schema
 
-Each application will have a configuration file defining deployment options for different technology stacks:
+Each imported service will have its configuration defined in the central service configuration file. The import scripts automatically detect service types and generate appropriate configurations:
 
 ```yaml
 # .tilt/service-config.yaml
+# Services are imported into services/ directory and configured here
 services:
-  # Python CrewAI Service
-  ai-agentic-mdr-oscar:
+  # Example: Python CrewAI Service imported from repository
+  ai-agentic-test-app:
     type: "python"
-    build_context: "./ai-agentic-mdr-oscar"
-    dockerfile: "./ai-agentic-mdr-oscar/Dockerfile"
-    ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/ai-agentic-mdr-oscar"
+    build_context: "./services/ai-agentic-test-app"
+    dockerfile: "./services/ai-agentic-test-app/Dockerfile"
+    # ECR image configuration (optional)
+    # ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/ai-agentic-test-app"
     dependencies: ["database", "redis"]
     ports: [8080, 8081]
     env_vars:
@@ -145,56 +165,27 @@ services:
       cpu: "500m"
       memory: "512Mi"
     
-  # Java Spring Boot Service
-  user-management-service:
-    type: "java"
-    build_context: "./user-management-service"
-    dockerfile: "./user-management-service/Dockerfile"
-    ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/user-management-service"
-    dependencies: ["database"]
-    ports: [8090]
+  # Example: Imported external services
+  database:
+    type: "external"
+    subtype: "postgres"
+    ports: [5432]
     env_vars:
-      - name: "SPRING_PROFILES_ACTIVE"
-        value: "local"
-      - name: "LOG_LEVEL"
-        value: "DEBUG"
-    resources:
-      cpu: "1000m"
-      memory: "1Gi"
+      - name: "POSTGRES_DB"
+        value: "testdb"
+      - name: "POSTGRES_USER"
+        value: "testuser"
+      - name: "POSTGRES_PASSWORD"
+        value: "testpass"
+    health_check:
+      command: "pg_isready -U testuser -d testdb"
     
-  # Go Microservice
-  api-gateway:
-    type: "go"
-    build_context: "./api-gateway"
-    dockerfile: "./api-gateway/Dockerfile"
-    ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/api-gateway"
-    dependencies: ["user-management-service"]
-    ports: [8000]
-    env_vars:
-      - name: "LOG_LEVEL"
-        value: "debug"
-      - name: "ENV"
-        value: "local"
-    resources:
-      cpu: "250m"
-      memory: "256Mi"
-      
-  # Node.js Service
-  notification-service:
-    type: "nodejs"
-    build_context: "./notification-service"
-    dockerfile: "./notification-service/Dockerfile"
-    ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/notification-service"
-    dependencies: ["redis"]
-    ports: [3000]
-    env_vars:
-      - name: "NODE_ENV"
-        value: "development"
-      - name: "LOG_LEVEL"
-        value: "debug"
-    resources:
-      cpu: "250m"
-      memory: "256Mi"
+  redis:
+    type: "external"
+    subtype: "redis"
+    ports: [6379]
+    health_check:
+      command: "redis-cli ping"
 ```
 
 ### Kubernetes Manifest Generation System
@@ -444,11 +435,11 @@ resources:
 ### Service Dependency Graph
 
 ```python
-# Service dependency resolution
+# Service dependency resolution (auto-detected during import)
 dependencies = {
-    "ai-agentic-mdr-oscar": ["database", "redis"],
-    "ai-agentic-leql-generator": ["database"],
-    "ai-agentic-test-app": ["database", "redis", "ai-agentic-mdr-oscar"]
+    "ai-agentic-test-app": ["database", "redis"],
+    # Dependencies are automatically detected by import-service.sh
+    # and configured in service-config.yaml
 }
 
 def get_deployment_order(requested_services):
@@ -523,4 +514,90 @@ resources:
     interval: 10s
 ```
 
-This design provides a comprehensive foundation for the Tilt-based local development environment, ensuring developer productivity while maintaining production parity through Helm chart reuse and proper isolation mechanisms.
+## Service Management Scripts
+
+The platform provides comprehensive automation through dedicated service management scripts:
+
+### Service Import Script (`import-service.sh`)
+
+```bash
+# Import from GitHub
+./scripts/import-service.sh https://github.com/user/my-service
+
+# Import with specific name
+./scripts/import-service.sh https://github.com/user/service --name custom-name
+
+# Import local directory
+./scripts/import-service.sh /path/to/local/service --type python
+```
+
+**Features:**
+- Auto-detects service type (Python, Java, Go, Node.js, etc.)
+- Normalizes repository URLs and names
+- Generates Dockerfile if missing
+- Configures service in `.tilt/service-config.yaml`
+- Supports multiple import types (clone, submodule, reference)
+
+### Service Discovery Script (`list-services.sh`)
+
+```bash
+# List all services with status
+./scripts/list-services.sh
+
+# Output includes:
+# - Service name, type, and ports
+# - Local directory status  
+# - Kubernetes deployment status
+# - Service location and configuration
+```
+
+### Service Information Script (`service-info.sh`)
+
+```bash
+# Get detailed service information
+./scripts/service-info.sh ai-agentic-test-app
+
+# Shows:
+# - Service configuration
+# - Directory analysis
+# - Dockerfile information
+# - Kubernetes status
+# - Environment variables
+# - Health check configuration
+```
+
+### Environment Setup Script (`setup-environment.sh`)
+
+```bash
+# Start predefined environments
+./scripts/setup-environment.sh backend-only
+./scripts/setup-environment.sh full-stack
+./scripts/setup-environment.sh minimal
+
+# Predefined environments:
+# - full-stack: All services (frontend + backend + data)
+# - backend-only: API services + databases
+# - minimal: Core services only
+# - staging-mirror: Mirror staging environment locally
+# - feature-branch: Lightweight environment for feature work
+```
+
+**Service Organization:**
+
+```
+x-team-tools/
+├── services/                    # Imported services directory
+│   ├── ai-agentic-test-app/     # Service imported from repository
+│   ├── user-service/            # Another imported service
+│   └── api-gateway/             # Additional imported service
+├── scripts/
+│   ├── import-service.sh        # Service import automation
+│   ├── list-services.sh         # Service discovery
+│   ├── service-info.sh          # Detailed service information
+│   └── setup-environment.sh     # Environment configuration
+└── .tilt/
+    ├── service-config.yaml      # Central service configuration
+    └── lib/                     # Tilt modular libraries
+```
+
+This design provides a comprehensive foundation for the Service Import/Integration Platform, ensuring developer productivity through automated service management while maintaining production parity and proper isolation mechanisms.

@@ -10,6 +10,31 @@ load('builds.star', 'setup_build_strategy', 'validate_build_requirements', 'get_
 load('config.star', 'apply_service_customizations', 'get_effective_build_strategy')
 load('error_handling.star', 'handle_service_deployment_error')
 
+def generate_unique_port_forwards(service_name, ports):
+    """Generate unique local port forwards for a service to avoid conflicts"""
+    if not ports:
+        return []
+    
+    # Simple port mapping: service index determines base port
+    # ai-agentic-test-app -> 8000, user-service -> 8001, test-service -> 8002, etc.
+    service_port_map = {
+        "ai-agentic-test-app": 8000,
+        "user-service": 8001, 
+        "test-service": 8002,
+        "database": 5432,
+        "redis": 6379,
+        "rabbitmq": 5672,
+    }
+    
+    base_local_port = service_port_map.get(service_name, 8000 + hash(service_name) % 100)
+    
+    port_forwards = []
+    for i, container_port in enumerate(ports):
+        local_port = base_local_port + i
+        port_forwards.append("{}:{}".format(local_port, container_port))
+    
+    return port_forwards
+
 def deploy_service(service_name, service_config, namespace, global_config, build_local_services, developer_id, debug_mode=False, tilt_config=None):
     """Deploy a service using Tilt best practices"""
 
@@ -43,9 +68,12 @@ def deploy_service(service_name, service_config, namespace, global_config, build
 
     k8s_yaml(blob(manifests))
 
+    # Generate unique port forwards to avoid local port conflicts
+    port_forwards = generate_unique_port_forwards(service_name, service_config.get("ports", []))
+    
     k8s_resource(
         service_name,
-        port_forwards=service_config.get("ports", []),
+        port_forwards=port_forwards,
         labels=[service_name]
     )
 
@@ -88,3 +116,24 @@ def create_endpoint_dashboard(deployed_services, namespace):
             cmd='echo "Service endpoints available"',
             labels=['endpoints']
         )
+
+def create_port_mapping_dashboard():
+    """Create dashboard showing port mappings to help developers"""
+    mapping_cmd = '''echo "🔗 PORT MAPPING DASHBOARD
+======================
+Service -> localhost:local_port:container_port
+
+  ai-agentic-test-app -> localhost:8000:8000
+  user-service -> localhost:8001:8000  
+  test-service -> localhost:8002:8000
+  database -> localhost:5432:5432
+  redis -> localhost:6379:6379
+  rabbitmq -> localhost:5672:5672
+
+💡 Access your services at the local ports above"'''
+    
+    local_resource(
+        'port-mapping-dashboard',
+        cmd=mapping_cmd,
+        labels=['monitoring']
+    )

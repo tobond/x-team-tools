@@ -8,7 +8,7 @@ developer:
 cluster:
   # Type of Kubernetes cluster to use
   # Will auto-setup if not available
-  type: "kind"
+  type: "docker-desktop"
   
   # Cluster name (for kind/k3d clusters)
   name: "tilt-dev"

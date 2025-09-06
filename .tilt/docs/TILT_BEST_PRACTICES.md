@@ -22,8 +22,9 @@ This guide outlines best practices for using Tilt effectively in your developmen
 # 1. Pull latest changes
 git pull origin main
 
-# 2. Start your development environment
-tilt up -- --developer_id=$(whoami)
+# 2. Check available services and start environment
+./scripts/list-services.sh
+./scripts/setup-environment.sh backend-only
 
 # 3. Verify services are running
 # Check Tilt UI at http://localhost:10350
@@ -279,15 +280,16 @@ services:
     dependencies: ["database"]
 ```
 
-#### Use Configuration Templates
+#### Import Services from Repositories
 ```bash
-# Create service template
-./scripts/create-service-template.sh my-new-service python
+# Import existing service
+./scripts/import-service.sh github:company/my-service
 
-# This generates:
-# - Service configuration
-# - Dockerfile template
-# - Basic project structure
+# Import with specific configuration
+./scripts/import-service.sh git@github.com:company/service.git --branch develop
+
+# Review imported service
+./scripts/service-info.sh my-service
 ```
 
 ### Environment Consistency

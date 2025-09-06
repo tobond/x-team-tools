@@ -1,6 +1,6 @@
 # x-team-tools
 
-A collection of common useful tooling for development teams, including scripts, AI prompts, templates, and a comprehensive Tilt-based local Kubernetes development environment.
+A comprehensive **Service Import/Integration Platform** powered by Tilt for local Kubernetes development. Import existing services from any repository and set up complete development environments in minutes.
 
 ## 🚀 Quick Start
 
@@ -14,8 +14,9 @@ cd x-team-tools
 # 2. Run setup script
 ./scripts/setup-macos.sh
 
-# 3. Start your development environment
-tilt up -- --developer_id=$(whoami)
+# 3. Import and start services
+./scripts/list-services.sh                    # See available services
+./scripts/setup-environment.sh backend-only   # Start backend environment
 
 # 4. Open Tilt UI
 open http://localhost:10350
@@ -47,11 +48,11 @@ See **[DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md)** for a complete list of 
 - **Flexible image sources**: ECR registry, local Docker builds, or live source builds
 - **Production parity**: Uses Kubernetes patterns that mirror production
 
-### Team Collaboration Tools
-- **Standardized service templates** for consistent project structure
-- **Team configuration management** with version control integration
-- **Automated environment validation** and troubleshooting tools
-- **Git hooks** for configuration validation and team updates
+### Service Import & Integration Tools
+- **Multi-repository import** from GitHub, Git URLs, or local directories
+- **Automatic service detection** and configuration generation
+- **Environment presets** (backend-only, full-stack, staging-mirror, minimal)
+- **Service discovery** with comprehensive status monitoring
 
 ### AI-Powered Development
 - **Standardized AI prompts** for code review and development assistance
@@ -80,37 +81,39 @@ This modular approach ensures:
 
 ## 🔧 Common Commands
 
-### Development Workflow
+### Service Import & Management
 ```bash
-# Start development environment
-tilt up -- --developer_id=$(whoami)
+# Import existing services
+./scripts/import-service.sh github:company/user-service
+./scripts/import-service.sh git@github.com:company/service.git --branch develop
 
-# Start specific services
-tilt up -- --services=service1,service2
+# Service discovery
+./scripts/list-services.sh                # Show all available services
+./scripts/service-info.sh service-name   # Detailed service information
 
-# Build some services locally, use ECR for others
-tilt up -- --build_local=service1 --services=service1,service2,service3
+# Environment management
+./scripts/setup-environment.sh backend-only    # APIs + databases
+./scripts/setup-environment.sh full-stack     # All services
+./scripts/setup-environment.sh minimal        # Core services only
 
-# Stop development environment
+# Manual service control
+tilt up service1 service2 -- --developer_id=$(whoami)
 tilt down
-
-# View service logs
-tilt logs service-name
 ```
 
-### Environment Management
+### System Management
 ```bash
 # Validate your environment
 ./scripts/validate-environment.sh
 
-# Check team standards compliance
+# Check team standards compliance  
 ./scripts/team/validate-team-standards.sh
 
-# Create new service from template
-./scripts/team/create-service.sh my-service python
-
 # Reset environment if needed
-tilt down && kubectl delete namespace dev-$(whoami) && tilt up
+tilt down && kubectl delete namespace dev-$(whoami)
+
+# Import additional services
+./scripts/import-service.sh ../local-service --type reference
 ```
 
 ### Kubernetes Operations
@@ -136,11 +139,15 @@ x-team-tools/
 │   ├── lib/                    # Modular Tilt libraries
 │   ├── team/                   # Team standards and configuration
 │   ├── environments/           # Environment-specific settings
-│   ├── templates/              # Service templates
 │   └── service-config.yaml     # Main service configuration
-├── scripts/                    # Setup and management scripts
+├── scripts/                    # Service import and management scripts
+│   ├── import-service.sh       # Import services from repositories
+│   ├── list-services.sh        # Service discovery and catalog
+│   ├── service-info.sh         # Detailed service information
+│   ├── setup-environment.sh    # Predefined environment setups
 │   ├── setup-*.sh              # OS-specific setup scripts
 │   └── team/                   # Team management scripts
+├── services/                   # Imported services directory
 ├── prompts/                    # Standardized AI prompts
 └── docs/                       # Additional documentation
 ```
@@ -148,21 +155,21 @@ x-team-tools/
 ## 🎯 Use Cases
 
 ### For Developers
-- **Fast development cycles** with live updates (< 30 seconds from code change to running)
+- **Fast service import** from any Git repository or local directory
+- **Environment presets** for common development scenarios  
+- **Service discovery** - find and understand available services
 - **Isolated environments** - work on any combination of services without conflicts
-- **Production-like testing** using Kubernetes patterns
-- **Easy service switching** between local builds and ECR images
 
 ### For Teams
-- **Consistent environments** across all team members
-- **Standardized service creation** using templates
-- **Team configuration management** with version control
-- **Automated validation** of environment setup and standards
+- **Multi-repository support** - work with services from different repositories
+- **Consistent environments** across all team members using predefined setups
+- **Service catalog** with automatic detection and configuration
+- **Environment replication** - mirror staging/production locally
 
 ### For DevOps/Platform Teams
 - **Modular architecture** for easy maintenance and extension
 - **Resource management** with quotas and monitoring
-- **Security best practices** built into service templates
+- **Flexible import strategies** (clone, submodule, reference)
 - **Comprehensive monitoring** and debugging capabilities
 
 ## 🚨 Troubleshooting
@@ -180,10 +187,14 @@ For detailed troubleshooting, see [TROUBLESHOOTING_GUIDE.md](TROUBLESHOOTING_GUI
 
 ### Adding New Services
 ```bash
-# Use the team service creation script
-./scripts/team/create-service.sh my-new-service python
+# Import existing service from repository
+./scripts/import-service.sh github:company/my-service
 
-# Or manually add to .tilt/service-config.yaml
+# Import from local directory  
+./scripts/import-service.sh ../existing-service --type reference
+
+# Verify service information
+./scripts/service-info.sh my-service
 ```
 
 ### Updating Team Configuration

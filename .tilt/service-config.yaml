@@ -5,8 +5,8 @@ services:
   # Test Application - AI Agentic Test App (now in workspace)
   ai-agentic-test-app:
     type: "python"
-    build_context: "./ai-agentic-test-app"
-    dockerfile: "./ai-agentic-test-app/Dockerfile"
+    build_context: "./services/ai-agentic-test-app"
+    dockerfile: "./services/ai-agentic-test-app/Dockerfile"
     dependencies: ["database", "redis"]
     ports: [8000]
     env_vars:
@@ -57,6 +57,7 @@ services:
       memory: "256Mi"
     health_check:
       command: ["redis-cli", "ping"]
+
 
 # Global configuration
 global:

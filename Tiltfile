@@ -19,7 +19,7 @@ load('ext://secret', 'secret_create_generic')
 load('.tilt/lib/config.star', 'parse_tilt_config', 'load_service_config', 'validate_services', 'create_service_customization_dashboard', 'create_service_selection_guide')
 load('.tilt/lib/cluster.star', 'validate_cluster_safety', 'detect_cluster_environment', 'setup_cluster_monitoring')
 load('.tilt/lib/namespace.star', 'setup_namespace')
-load('.tilt/lib/services.star', 'deploy_service', 'create_deployment_summary', 'deploy_services_orchestrated', 'create_endpoint_dashboard')
+load('.tilt/lib/services.star', 'deploy_service', 'create_deployment_summary', 'deploy_services_orchestrated', 'create_endpoint_dashboard', 'create_port_mapping_dashboard')
 load('.tilt/lib/dependencies.star', 'setup_service_dependencies')
 load('.tilt/lib/monitoring.star', 'setup_monitoring_resources', 'setup_safety_monitoring', 'setup_cleanup_resources', 'setup_debugging_resources', 'setup_service_dashboard')
 load('.tilt/lib/builds.star', 'setup_build_monitoring', 'create_live_update_summary', 'create_build_strategy_dashboard', 'create_ecr_version_monitor', 'create_service_customization_validator')
@@ -146,6 +146,9 @@ def main():
     
     # Setup endpoint dashboard
     create_endpoint_dashboard(all_deployed_services, namespace)
+    
+    # Setup port mapping dashboard
+    create_port_mapping_dashboard()
     
     # 9. Print success message
     _print_success_message(current_context, cluster_info, namespace, deployed_services, deployed_externals)

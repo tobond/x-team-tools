@@ -2,9 +2,9 @@
 
 ## Introduction
 
-This feature will provide a robust local development environment system using Tilt that enables developers to work on any type of application (Python, Java, Go, Node.js, etc.) including CrewAI services, with fast feedback loops and near-instant deployment to a local Kubernetes environment. The system will generate Kubernetes manifests to mirror production deployment patterns while supporting hot reloading, multiple image sources, and flexible multi-service deployments. Each developer will have a completely isolated environment.
+This feature will provide a robust local development environment system using Tilt that enables developers to **import and integrate existing services** from various sources (Git repositories, local directories) of any type (Python, Java, Go, Node.js, etc.) including CrewAI services. The system provides fast feedback loops and near-instant deployment to a local Kubernetes environment, with automatic service discovery, configuration generation, and comprehensive service management tools. Each developer will have a completely isolated environment for working with imported services.
 
-**Architecture Note**: The system follows a **modular architecture** with clear separation of concerns, where the main Tiltfile (150 lines) orchestrates focused modules for configuration, cluster management, manifest generation, service deployment, dependency management, and monitoring. This approach ensures maintainability, testability, and enables team collaboration while preserving all functionality.
+**Architecture Note**: The system follows a **Service Import/Integration Platform** paradigm with a modular architecture where the main Tiltfile (192 lines) orchestrates focused modules for configuration, cluster management, manifest generation, service deployment, dependency management, and monitoring. The platform emphasizes importing and integrating existing services rather than creating new ones, with comprehensive automation scripts for service discovery, import, and management.
 
 ## Requirements
 
@@ -79,25 +79,27 @@ This feature will provide a robust local development environment system using Ti
 
 ### Requirement 7
 
-**User Story:** As a team lead, I want to ensure consistent development environments across the team, so that "works on my machine" issues are minimized.
+**User Story:** As a team lead, I want to ensure consistent development environments across the team with standardized service import and management processes, so that "works on my machine" issues are minimized.
 
 #### Acceptance Criteria
 
-1. WHEN a new developer joins THEN they SHALL be able to set up their local environment with minimal Tilt configuration
-2. WHEN Tiltfile or service configurations change THEN all team members SHALL receive the updates through version control
+1. WHEN a new developer joins THEN they SHALL be able to import and run existing services with automated setup scripts
+2. WHEN service configurations or import processes change THEN all team members SHALL receive updates through version control
 3. WHEN developers work on their local clusters THEN each SHALL have their own completely isolated environment by default
-4. IF environment setup fails THEN Tilt SHALL provide clear error messages and setup guidance
+4. IF service import or environment setup fails THEN the system SHALL provide clear error messages and automated troubleshooting guidance
+5. WHEN importing services THEN the system SHALL automatically detect service types, ports, and generate appropriate configurations
 
 ### Requirement 8
 
-**User Story:** As a developer, I want to deploy any mix of multiple applications simultaneously (Python, Java, Go, Node.js, CrewAI services, etc.), so that I can work on complex workflows that span multiple applications and technology stacks.
+**User Story:** As a developer, I want to import and deploy any mix of multiple existing applications simultaneously (Python, Java, Go, Node.js, CrewAI services, etc.), so that I can work on complex workflows that span multiple applications and technology stacks.
 
 #### Acceptance Criteria
 
-1. WHEN working on multiple services THEN Tilt SHALL support deploying any combination of services from the monorepo
-2. WHEN services have interdependencies THEN Tilt SHALL handle deployment ordering and service discovery automatically
-3. WHEN scaling the number of services THEN the local Kubernetes cluster SHALL handle resource allocation efficiently
-4. IF a service fails THEN other services SHALL continue running independently
+1. WHEN importing multiple services THEN Tilt SHALL support deploying any combination of imported services from various sources
+2. WHEN imported services have interdependencies THEN Tilt SHALL handle deployment ordering and service discovery automatically
+3. WHEN scaling the number of imported services THEN the local Kubernetes cluster SHALL handle resource allocation efficiently
+4. IF an imported service fails THEN other services SHALL continue running independently
+5. WHEN importing services THEN the system SHALL organize them in a `services/` directory structure for clear separation
 
 ### Requirement 9
 
@@ -109,3 +111,15 @@ This feature will provide a robust local development environment system using Ti
 2. WHEN database access is needed THEN Tilt SHALL support local database instances with test data in isolated namespaces
 3. WHEN message queues are used THEN Tilt SHALL provide local queue implementations deployed via generated manifests
 4. IF production secrets are needed THEN Tilt SHALL provide secure local secret management for the developer's local environment
+
+### Requirement 10 (NEW)
+
+**User Story:** As a developer, I want comprehensive service import and management tools, so that I can easily discover, import, configure, and monitor existing services.
+
+#### Acceptance Criteria
+
+1. WHEN importing a service THEN the system SHALL provide `import-service.sh` script that supports multiple repository formats (GitHub URLs, Git URLs, local paths)
+2. WHEN managing services THEN the system SHALL provide `list-services.sh` script showing service status, type, ports, and location
+3. WHEN investigating services THEN the system SHALL provide `service-info.sh` script with detailed service configuration and health information
+4. WHEN setting up environments THEN the system SHALL provide `setup-environment.sh` script with predefined environment configurations (full-stack, backend-only, minimal, staging-mirror, feature-branch)
+5. WHEN importing services THEN the system SHALL auto-detect service types, generate appropriate Dockerfiles if missing, and configure health checks

@@ -66,9 +66,9 @@ Welcome to the x-team-tools development environment documentation. This index he
 3. Follow the "First Time Setup" section
 4. Join team Slack/chat for support
 
-### I Want to Add a New Service
-1. Use `./scripts/team/create-service.sh my-service python`
-2. Implement your service code
+### I Want to Import an Existing Service
+1. Use `./scripts/import-service.sh https://github.com/user/my-service`
+2. Configure service in `.tilt/service-config.yaml` if needed
 3. Test with `tilt up -- --services=my-service --build_local=my-service`
 4. See [TILT_CONFIGURATION_GUIDE.md](TILT_CONFIGURATION_GUIDE.md) for advanced options
 
@@ -87,7 +87,7 @@ Welcome to the x-team-tools development environment documentation. This index he
 1. Read [TEAM_CONFIGURATION.md](TEAM_CONFIGURATION.md)
 2. Run `./scripts/setup-team-config.sh`
 3. Customize `.tilt/team/standards.yaml`
-4. Create service templates in `.tilt/templates/`
+4. Import and configure services as needed
 
 ### I Need Advanced Configuration
 1. Study [TILT_CONFIGURATION_GUIDE.md](TILT_CONFIGURATION_GUIDE.md)
@@ -139,9 +139,10 @@ tilt up -- --developer_id=$(whoami)        # Start development
 tilt down                                   # Stop development
 tilt logs <service-name>                    # View service logs
 
-# Team management
-./scripts/team/create-service.sh my-service python  # Create service
-./scripts/team/validate-team-standards.sh           # Validate standards
+# Service management
+./scripts/import-service.sh https://github.com/user/service  # Import service
+./scripts/list-services.sh                          # List all services
+./scripts/service-info.sh service-name              # Get service details
 
 # Troubleshooting
 kubectl get pods -n dev-$(whoami)          # Check pod status
