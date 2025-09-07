@@ -138,7 +138,7 @@ async def execute_research(request: ResearchRequest):
 # 🤖 Agentic Market Research Report: {topic}
 
 ## Executive Summary
-🚀 This demonstrates our CrewAI-powered market research workflow with live hot deployment capabilities. The system successfully processes research requests through a multi-agent collaboration framework.
+🚀Hot! This demonstrates our CrewAI-powered market research workflow with live hot deployment capabilities. The system successfully processes research requests through a multi-agent collaboration framework.
 
 ## Multi-Agent Workflow Demonstration
 

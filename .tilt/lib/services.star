@@ -13,15 +13,16 @@ load('error_handling.star', 'handle_service_deployment_error')
 def generate_unique_port_forwards(service_name, ports):
     """Generate unique local port forwards for a service to avoid conflicts
     
-    Uses a dynamic port allocation strategy based on:
-    1. Standard ports (5432 for postgres, 6379 for redis, etc.) get preserved when possible
-    2. Hash-based port allocation to avoid conflicts between services
-    3. Sequential allocation for services with multiple ports
+    Uses a smart port allocation strategy:
+    1. Try to preserve the original port first (most developer-friendly)
+    2. Use standard ports for well-known services (5432 for postgres, 6379 for redis, etc.)
+    3. Only use hash-based port generation if there would be conflicts
+    4. Sequential allocation for services with multiple ports
     """
     if not ports:
         return []
     
-    # Standard service ports that should be preserved to maintain developer familiarity
+    # Standard service ports that are commonly expected
     standard_ports = {
         5432: 5432,  # PostgreSQL
         6379: 6379,  # Redis
@@ -30,22 +31,35 @@ def generate_unique_port_forwards(service_name, ports):
         9200: 9200,  # Elasticsearch
     }
     
+    # Keep track of ports we've allocated to avoid conflicts within this service
+    allocated_ports = set()
     port_forwards = []
+    
     for i, container_port in enumerate(ports):
-        # Use standard port if it matches and this is the first port
+        local_port = 0  # Initialize with a default value
+        
+        # Strategy 1: Use standard port mapping if it's a well-known service port
         if i == 0 and container_port in standard_ports:
             local_port = standard_ports[container_port]
-        else:
+        # Strategy 2: Try to use the original port if it's not already taken
+        elif container_port not in allocated_ports:
+            # Skip standard ports reserved for other services (unless this service is using that standard port)
+            if container_port not in standard_ports.values() or container_port in standard_ports:
+                local_port = container_port
+        
+        # Strategy 3: Generate a deterministic alternative port if there's a conflict
+        if local_port == 0:
             # Generate deterministic but unique port based on service name and port number
             # Base range: 8000-9999 for application services
             hash_input = service_name + str(container_port) + str(i)
             port_hash = abs(hash(hash_input)) % 2000  # 0-1999
             local_port = 8000 + port_hash
             
-            # Avoid conflicts with standard ports
-            while local_port in standard_ports.values():
+            # Avoid conflicts with standard ports and already allocated ports
+            while local_port in standard_ports.values() or local_port in allocated_ports:
                 local_port = local_port + 1 if local_port < 9999 else 8000
         
+        allocated_ports.add(local_port)
         port_forwards.append("{}:{}".format(local_port, container_port))
     
     return port_forwards

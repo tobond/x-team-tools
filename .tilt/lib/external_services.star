@@ -24,6 +24,9 @@ To add any external service (MySQL, MongoDB, Kafka, Elasticsearch, etc.), simply
 No code changes required - everything is configuration-driven and service-agnostic.
 """
 
+# Import the port forwarding function from services.star
+load('services.star', 'generate_unique_port_forwards')
+
 def generate_k8s_manifests(service_name, service_config, namespace, image_name, global_config, developer_id):
     """Generate basic Kubernetes manifests - simplified version for external services"""
 
@@ -190,9 +193,11 @@ def deploy_postgres_database(service_name, service_config, namespace, global_con
     k8s_yaml(manifests, allow_duplicates=False, validate=True)
     
     # Configure k8s resource with database-specific settings
+    # Generate unique port forwards to avoid conflicts
+    port_forwards = generate_unique_port_forwards(service_name, [5432])
     k8s_resource(
         service_name,
-        port_forwards=["5432:5432"],
+        port_forwards=port_forwards,
         labels=[
             "category:database",
             "type:postgres", 
@@ -233,9 +238,11 @@ def deploy_redis_cache(service_name, service_config, namespace, global_config, d
     k8s_yaml(manifests, allow_duplicates=False, validate=True)
     
     # Configure k8s resource
+    # Generate unique port forwards to avoid conflicts
+    port_forwards = generate_unique_port_forwards(service_name, [6379])
     k8s_resource(
         service_name,
-        port_forwards=["6379:6379"],
+        port_forwards=port_forwards,
         labels=[
             "category:cache",
             "type:redis",
@@ -276,9 +283,11 @@ def deploy_mock_service(service_name, service_config, namespace, global_config, 
     
     # Configure k8s resource
     ports = mock_config.get("ports", [8080])
+    # Generate unique port forwards to avoid conflicts
+    port_forwards = generate_unique_port_forwards(service_name, ports)
     k8s_resource(
         service_name,
-        port_forwards=["{}:{}".format(port, port) for port in ports],
+        port_forwards=port_forwards,
         labels=[
             "category:mock",
             "type:mock-api",
@@ -323,9 +332,12 @@ def deploy_generic_external_service(service_name, service_config, namespace, glo
     ports = service_config.get("ports", [])
     service_type = service_config.get("type", "external")
     
+    # Generate unique port forwards to avoid conflicts
+    port_forwards = generate_unique_port_forwards(service_name, ports) if ports else []
+    
     k8s_resource(
         service_name,
-        port_forwards=["{}:{}".format(port, port) for port in ports] if ports else [],
+        port_forwards=port_forwards,
         labels=[
             "category:external",
             "type:" + service_type,
