@@ -221,12 +221,12 @@ For local development, the framework uses standard, predictable credentials:
 ### 3. **namespace.star** - Namespace Management
 ```starlark
 # Functions:
-- setup_namespace()             # Create isolated developer namespace
+- setup_namespace()             # Create developer namespace
 ```
 
 **Responsibilities:**
 - Developer-specific namespace creation with proper labeling
-- Namespace isolation and resource quotas
+- Namespace management and resource quotas
 - Namespace validation and monitoring
 
 ### 4. **k8s_manifests.star** - Manifest Generation
@@ -329,7 +329,7 @@ def main():
     cluster_info = detect_cluster_environment(current_context, debug_mode)
     setup_cluster_monitoring(current_context, cluster_info)
     
-    # 3. Namespace setup with isolation
+    # 3. Namespace setup
     namespace = setup_namespace(developer_id, current_context, debug_mode)
     
     # 4. Monitoring and safety resources

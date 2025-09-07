@@ -141,7 +141,7 @@ Services are automatically grouped in the Tilt UI using comprehensive labels:
 - **Tier Labels**: `data`, `service`, `generic`
 - **Type Labels**: Service technology (`python`, `java`, `go`, `nodejs`, etc.)
 - **Build Labels**: `local` vs `ecr` build strategy
-- **Developer Labels**: Per-developer isolation
+- **Developer Labels**: Developer identification for resource management
 
 ### Trigger Modes
 

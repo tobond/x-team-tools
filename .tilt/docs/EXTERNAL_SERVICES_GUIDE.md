@@ -37,7 +37,7 @@ tilt up -- --services=database,mock-service,ai-agentic-mdr-oscar
 - **Connection**: `redis-cli -h localhost -p 6379 -a testpass`
 - **Features**:
   - Cache and simple queuing
-  - Developer-isolated passwords
+  - Standard credentials for local development
   - Persistent storage
 
 
@@ -50,7 +50,7 @@ tilt up -- --services=database,mock-service,ai-agentic-mdr-oscar
   - Fully configurable mock endpoints
   - Support for any HTTP method
   - Custom response data and status codes
-  - Developer isolation
+  - Standard credentials for local development
   - Health check endpoints
 
 ## Service Configuration
@@ -89,13 +89,13 @@ services:
     # ... other configuration
 ```
 
-## Developer Isolation
+## Local Development Configuration
 
-All external services are automatically isolated per developer:
+All external services use standard credentials for local development:
 
 - **Database**: `testdb`, **User**: `testuser`
 - **Password**: `testpass`
-- **Namespaces**: `dev-{developer_id}`
+- **Namespace**: `default`
 
 ## Monitoring and Management
 
@@ -109,16 +109,16 @@ All external services are automatically isolated per developer:
 
 ```bash
 # Check service status
-kubectl get pods -n dev-{your_id}
+kubectl get pods
 
 # View service logs
-kubectl logs -f deployment/database -n dev-{your_id}
+kubectl logs -f deployment/database
 
 # Test database connection
-kubectl exec -it deployment/database -n dev-{your_id} -- psql -U testuser -d testdb
+kubectl exec -it deployment/database -- psql -U testuser -d testdb
 
 # Test Redis connection
-kubectl exec -it deployment/redis -n dev-{your_id} -- redis-cli -a testpass
+kubectl exec -it deployment/redis -- redis-cli -a testpass
 ```
 
 ### Health Checks
@@ -130,17 +130,17 @@ All services include health endpoints:
 curl http://localhost:8090/health
 
 # Database health (via kubectl)
-kubectl exec deployment/database -n dev-{your_id} -- pg_isready
+kubectl exec deployment/database -- pg_isready
 
 # Redis health (via kubectl)  
-kubectl exec deployment/redis -n dev-{your_id} -- redis-cli -a testpass ping
+kubectl exec deployment/redis -- redis-cli -a testpass ping
 ```
 
 ## Secret Management
 
 ### Developer Secret Templates
 
-Create custom secrets in `.tilt/secrets/{your_id}.yaml`:
+Create custom secrets in `.tilt/secrets/local-dev.yaml`:
 
 ```yaml
 secrets:
@@ -310,23 +310,23 @@ All external services use consistent patterns:
 
 ```bash
 # Check service status
-kubectl describe pod -l app=database -n dev-{your_id}
+kubectl describe pod -l app=database
 
 # View service events
-kubectl get events -n dev-{your_id} --sort-by='.lastTimestamp'
+kubectl get events --sort-by='.lastTimestamp'
 
 # Check persistent volumes
-kubectl get pvc -n dev-{your_id}
+kubectl get pvc
 
 # Test network connectivity
-kubectl exec -it deployment/my-app -n dev-{your_id} -- nc -zv database 5432
+kubectl exec -it deployment/my-app -- nc -zv database 5432
 ```
 
 ## Best Practices
 
 1. **Use Dependencies**: Always specify service dependencies in your configuration
 2. **Monitor Resources**: Check resource usage in Tilt UI
-3. **Test Isolation**: Verify your services work with developer-specific data
+3. **Test Locally**: Verify your services work with standard local development data
 4. **Clean Secrets**: Don't commit real secrets to version control
 5. **Health Checks**: Use provided health endpoints for application readiness
 
