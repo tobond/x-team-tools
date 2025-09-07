@@ -1,6 +1,6 @@
 # External Services Usage Guide
 
-This guide explains how to use the external services and dependency management features implemented in Task 9.
+This guide explains how to use the external services and dependency management features.
 
 ## Quick Start
 
@@ -10,11 +10,8 @@ Deploy external services along with your applications:
 # Deploy with database and cache
 tilt up -- --services=database,redis,ai-agentic-mdr-oscar
 
-# Deploy with message queue
-tilt up -- --services=database,redis,rabbitmq,ai-agentic-mdr-oscar
-
 # Deploy with mock services for external API testing
-tilt up -- --services=database,mock-payment-api,mock-user-api,ai-agentic-mdr-oscar
+tilt up -- --services=database,mock-service,ai-agentic-mdr-oscar
 ```
 
 ## Available External Services
@@ -25,9 +22,9 @@ tilt up -- --services=database,mock-payment-api,mock-user-api,ai-agentic-mdr-osc
 - **Service**: `database`
 - **Type**: `postgres`
 - **Port**: 5432
-- **Connection**: `psql -h localhost -p 5432 -U devuser_{your_id} -d devdb_{your_id}`
+- **Connection**: `psql -h localhost -p 5432 -U testuser -d testdb`
 - **Features**: 
-  - Developer-isolated databases
+  - Standard credentials for local development
   - Automatic test data creation
   - Persistent storage
 
@@ -37,50 +34,24 @@ tilt up -- --services=database,mock-payment-api,mock-user-api,ai-agentic-mdr-osc
 - **Service**: `redis`
 - **Type**: `redis`
 - **Port**: 6379
-- **Connection**: `redis-cli -h localhost -p 6379 -a devpass_{your_id}`
+- **Connection**: `redis-cli -h localhost -p 6379 -a testpass`
 - **Features**:
   - Cache and simple queuing
   - Developer-isolated passwords
   - Persistent storage
 
-#### RabbitMQ Message Queue
-- **Service**: `rabbitmq`
-- **Type**: `rabbitmq`
-- **Ports**: 5672 (AMQP), 15672 (Management UI)
-- **Management UI**: http://localhost:15672
-- **Credentials**: `devuser_{your_id}` / `devpass_{your_id}`
-- **Features**:
-  - Full message queuing with exchanges
-  - Developer-isolated virtual hosts
-  - Pre-configured test queues
 
 ### Mock Services
 
-#### Mock Payment API
-- **Service**: `mock-payment-api`
-- **Port**: 8090
-- **Base URL**: http://localhost:8090
-- **Endpoints**:
-  - `POST /api/v1/payments` - Create payment
-  - `GET /api/v1/payments/{id}` - Get payment details
-  - `POST /api/v1/payments/{id}/refund` - Process refund
-
-#### Mock User API
-- **Service**: `mock-user-api`
-- **Port**: 8091
-- **Base URL**: http://localhost:8091
-- **Endpoints**:
-  - `GET /api/v1/users` - List users
-  - `POST /api/v1/users` - Create user
-  - `GET /api/v1/users/{id}` - Get user details
-
-#### Mock Notification Service
-- **Service**: `mock-notification-service`
-- **Port**: 8092
-- **Base URL**: http://localhost:8092
-- **Endpoints**:
-  - `POST /api/v1/notifications/send` - Send notification
-  - `GET /api/v1/notifications/{id}/status` - Get notification status
+#### Mock Services
+- **Type**: `mock`
+- **Configurable Ports**: Default 8080
+- **Features**:
+  - Fully configurable mock endpoints
+  - Support for any HTTP method
+  - Custom response data and status codes
+  - Developer isolation
+  - Health check endpoints
 
 ## Service Configuration
 
@@ -114,7 +85,7 @@ Configure service dependencies in your application services:
 services:
   my-app:
     type: "python"
-    dependencies: ["database", "redis", "mock-payment-api"]
+    dependencies: ["database", "redis", "mock-service"]
     # ... other configuration
 ```
 
@@ -122,9 +93,8 @@ services:
 
 All external services are automatically isolated per developer:
 
-- **Databases**: `devdb_{developer_id}`, `devuser_{developer_id}`
-- **Passwords**: `devpass_{developer_id}`
-- **Virtual Hosts**: `dev_{developer_id}` (RabbitMQ)
+- **Database**: `testdb`, **User**: `testuser`
+- **Password**: `testpass`
 - **Namespaces**: `dev-{developer_id}`
 
 ## Monitoring and Management
@@ -145,10 +115,10 @@ kubectl get pods -n dev-{your_id}
 kubectl logs -f deployment/database -n dev-{your_id}
 
 # Test database connection
-kubectl exec -it deployment/database -n dev-{your_id} -- psql -U devuser_{your_id} -d devdb_{your_id}
+kubectl exec -it deployment/database -n dev-{your_id} -- psql -U testuser -d testdb
 
 # Test Redis connection
-kubectl exec -it deployment/redis -n dev-{your_id} -- redis-cli -a devpass_{your_id}
+kubectl exec -it deployment/redis -n dev-{your_id} -- redis-cli -a testpass
 ```
 
 ### Health Checks
@@ -163,7 +133,7 @@ curl http://localhost:8090/health
 kubectl exec deployment/database -n dev-{your_id} -- pg_isready
 
 # Redis health (via kubectl)  
-kubectl exec deployment/redis -n dev-{your_id} -- redis-cli -a devpass_{your_id} ping
+kubectl exec deployment/redis -n dev-{your_id} -- redis-cli -a testpass ping
 ```
 
 ## Secret Management
@@ -212,21 +182,120 @@ python3 .tilt/test-external-services.py
 ### Manual Testing
 
 ```bash
-# Test mock payment API
-curl -X POST http://localhost:8090/api/v1/payments \
-  -H "Content-Type: application/json" \
-  -d '{"amount": 100.00, "currency": "USD"}'
+# Test mock service
+curl http://localhost:8080/health
 
 # Test database
-psql -h localhost -p 5432 -U devuser_{your_id} -d devdb_{your_id} -c "SELECT * FROM users;"
+psql -h localhost -p 5432 -U testuser -d testdb -c "SELECT * FROM users;"
 
 # Test Redis
-redis-cli -h localhost -p 6379 -a devpass_{your_id} SET test_key "test_value"
-redis-cli -h localhost -p 6379 -a devpass_{your_id} GET test_key
+redis-cli -h localhost -p 6379 -a testpass SET test_key "test_value"
+redis-cli -h localhost -p 6379 -a testpass GET test_key
 
-# Test RabbitMQ
-# Access management UI at http://localhost:15672
 ```
+
+## Adding New External Services
+
+### Service-Agnostic Framework
+
+The external services framework is completely service-agnostic. You can add **any Docker-based external service** without code changes by simply adding it to `.tilt/service-config.yaml`.
+
+### Quick Examples
+
+```yaml
+# Add MySQL Database
+mysql:
+  type: "external"
+  image: "mysql:8.0"
+  ports: [3306]
+  env_vars:
+    - name: "MYSQL_ROOT_PASSWORD"
+      value: "testpass"
+    - name: "MYSQL_DATABASE"
+      value: "testdb"
+    - name: "MYSQL_USER"
+      value: "testuser"
+    - name: "MYSQL_PASSWORD"
+      value: "testpass"
+  resources:
+    cpu: "500m"
+    memory: "1Gi"
+
+# Add Elasticsearch
+elasticsearch:
+  type: "external"
+  image: "elasticsearch:8.11.0"
+  ports: [9200]
+  env_vars:
+    - name: "discovery.type"
+      value: "single-node"
+    - name: "ES_JAVA_OPTS"
+      value: "-Xms512m -Xmx512m"
+  resources:
+    cpu: "1000m"
+    memory: "2Gi"
+
+# Add RabbitMQ
+rabbitmq:
+  type: "external"
+  image: "rabbitmq:3-management"
+  ports: [5672, 15672]
+  env_vars:
+    - name: "RABBITMQ_DEFAULT_USER"
+      value: "testuser"
+    - name: "RABBITMQ_DEFAULT_PASS"
+      value: "testpass"
+  resources:
+    cpu: "250m"
+    memory: "512Mi"
+
+# Add Any Docker Service
+my-custom-service:
+  type: "external"
+  image: "my-company/my-service:latest"
+  ports: [8080, 9090]
+  env_vars:
+    - name: "CONFIG_ENV"
+      value: "development"
+  resources:
+    cpu: "500m"
+    memory: "512Mi"
+  health_check:
+    command: ["curl", "-f", "http://localhost:8080/health"]
+```
+
+### Usage After Adding
+
+Once you add a service to the configuration, you can immediately use it:
+
+```bash
+# Deploy your new services
+tilt up -- --services=mysql,elasticsearch,my-app
+
+# Or include in environments
+# Add to .tilt/environments.yaml:
+# my-environment:
+#   services: ["my-app", "mysql", "elasticsearch"]
+```
+
+### Supported Service Types
+
+The framework can deploy **any Docker-based service**:
+- **Databases**: MySQL, MongoDB, CouchDB, CockroachDB, InfluxDB
+- **Caches**: Memcached, Hazelcast, Apache Ignite
+- **Message Queues**: Apache Kafka, NATS, Apache Pulsar
+- **Search**: OpenSearch, Solr, MeiliSearch
+- **Monitoring**: Prometheus, Grafana, Jaeger, Zipkin
+- **Custom Services**: Any Docker image from any registry
+
+### Standard Patterns
+
+All external services use consistent patterns:
+- **Credentials**: `testuser` / `testpass` for local development
+- **Configuration**: Environment variables in YAML
+- **Resources**: CPU and memory limits per service
+- **Health Checks**: Optional custom health check commands
+- **Networking**: Automatic port forwarding and service discovery
 
 ## Troubleshooting
 
@@ -234,7 +303,7 @@ redis-cli -h localhost -p 6379 -a devpass_{your_id} GET test_key
 
 1. **Service not starting**: Check resource limits and cluster capacity
 2. **Connection refused**: Verify port-forwards are active in Tilt UI
-3. **Authentication failed**: Check developer-specific credentials
+3. **Authentication failed**: Check standard credentials (testuser/testpass)
 4. **Data not persisting**: Verify PVC creation and mounting
 
 ### Debug Commands
@@ -297,9 +366,8 @@ const client = redis.createClient({
 import requests
 
 # Use mock service for external API calls
-response = requests.post(
-    "http://mock-payment-api:8090/api/v1/payments",
-    json={"amount": 100.00, "currency": "USD"}
+response = requests.get(
+    "http://mock-service:8080/api/v1/users"
 )
 ```
 

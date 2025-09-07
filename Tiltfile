@@ -93,7 +93,7 @@ def main():
 
     # Deploy external services
     # Filter external services from the requested services
-    external_service_types = ["postgres", "redis", "rabbitmq", "mock"]
+    external_service_types = ["postgres", "redis", "mock"]
     external_services = {}
     
     for service_name in services_to_deploy:
@@ -147,8 +147,8 @@ def main():
     # Setup endpoint dashboard
     create_endpoint_dashboard(all_deployed_services, namespace)
     
-    # Setup port mapping dashboard
-    create_port_mapping_dashboard()
+    # Setup dynamic port mapping dashboard with actual service data
+    create_port_mapping_dashboard(all_deployed_services)
     
     # 9. Print success message
     _print_success_message(current_context, cluster_info, namespace, deployed_services, deployed_externals)

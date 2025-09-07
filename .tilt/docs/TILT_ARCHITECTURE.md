@@ -8,12 +8,16 @@ This document describes the modular architecture of the Tilt development environ
 
 ### 1. **Modular Design**
 - **Separation of Concerns**: Each module handles a specific responsibility
+- **Framework-Project Separation**: Clear boundaries between generic framework and project-specific configuration
 - **Reusable Components**: Common functionality extracted into utilities
 - **Clear Interfaces**: Well-defined function signatures and contracts
 - **Single Responsibility**: Each file focuses on one domain
+- **Service-Agnostic Framework**: No hardcoded service names in framework code
 
 ### 2. **Configuration-Driven**
 - **Centralized Configuration**: All settings managed through YAML and command-line args
+- **User-Defined Environments**: Complete environment customization via `.tilt/environments.yaml`
+- **Dynamic Service Discovery**: Framework adapts to any service configuration
 - **Environment-Specific Defaults**: Sensible defaults with override capabilities
 - **Validation**: Comprehensive configuration validation and error reporting
 - **Type Safety**: Clear parameter types and validation
@@ -28,7 +32,7 @@ This document describes the modular architecture of the Tilt development environ
 
 ```
 .tilt/
-├── lib/                          # Modular Starlark libraries
+├── lib/                          # Modular Starlark libraries (FRAMEWORK LAYER)
 │   ├── config.star              # Configuration parsing and validation
 │   ├── cluster.star             # Cluster safety and environment detection
 │   ├── namespace.star           # Namespace management and isolation
@@ -37,13 +41,152 @@ This document describes the modular architecture of the Tilt development environ
 │   ├── dependencies.star        # Service dependency ordering
 │   ├── builds.star              # Build strategies and live updates
 │   ├── services.star            # Service deployment orchestration
-│   └── monitoring.star          # Monitoring and validation resources
-├── service-config.yaml          # Service definitions and configuration
+│   ├── monitoring.star          # Monitoring and validation resources
+│   ├── error_handling.star      # Error handling and recovery
+│   └── external_services.star   # Service-agnostic external service deployment
+├── service-config.yaml          # Service definitions (PROJECT LAYER)
+├── environments.yaml            # User-defined environments (PROJECT LAYER)
 └── developer-config.yaml       # Developer-specific settings (optional)
 
-Tiltfile                         # Main orchestration file
+Tiltfile                         # Main orchestration file (FRAMEWORK LAYER)
 tilt_config.json                 # Tilt-specific configuration
 ```
+
+## Dynamic Port Allocation System
+
+### Overview
+
+The framework implements a sophisticated dynamic port allocation system that eliminates hardcoded service-to-port mappings while ensuring conflict-free local development.
+
+### Key Features
+
+#### 1. **Hash-Based Port Generation**
+```starlark
+# Generate deterministic but unique ports
+hash_input = service_name + str(container_port) + str(port_index)
+port_hash = abs(hash(hash_input)) % 2000  # 0-1999
+local_port = 8000 + port_hash
+```
+
+#### 2. **Standard Port Preservation**
+- PostgreSQL: 5432 → 5432
+- Redis: 6379 → 6379
+- MySQL: 3306 → 3306
+- MongoDB: 27017 → 27017
+- Elasticsearch: 9200 → 9200
+
+#### 3. **Conflict Avoidance**
+- Automatic detection of port conflicts
+- Incremental port assignment for conflicts
+- Fallback mechanisms for edge cases
+
+#### 4. **Dynamic Dashboard Generation**
+- Real-time port mapping display
+- Service-specific forwarding information
+- No hardcoded service references
+
+### Implementation Benefits
+
+- **Service Agnostic**: Works with any service configuration
+- **Deterministic**: Same service always gets same ports
+- **Developer Friendly**: Preserves familiar database ports
+- **Conflict Free**: Automatically handles port collisions
+
+## User-Defined Environment System
+
+### Framework-Project Separation
+
+The architecture now implements complete separation between the generic framework and project-specific configuration:
+
+#### Framework Layer (Generic & Reusable)
+- `Tiltfile` - Generic orchestration logic
+- `.tilt/lib/*.star` - Service-agnostic modules
+- `scripts/setup-environment.sh` - Generic environment setup
+
+#### Project Layer (User-Configurable)
+- `.tilt/service-config.yaml` - Project's services
+- `.tilt/environments.yaml` - User-defined environments
+- `services/` directory - Imported service code
+
+### Environment Configuration
+
+```yaml
+# .tilt/environments.yaml
+environments:
+  minimal:
+    description: "Essential services only"
+    services: ["ai-agentic-test-app"]
+    build_strategy: "local"
+  
+  backend-only:
+    description: "APIs and databases"
+    services: ["ai-agentic-test-app", "database", "redis"]
+    build_strategy: "mixed"
+  
+  custom-demo:
+    description: "My custom environment"
+    services: ["service-a", "service-b"]
+    build_strategy: "ecr"
+
+global:
+  default_build_strategy: "mixed"
+```
+
+### Benefits
+
+- **Complete Flexibility**: Users define any environment combinations
+- **No Framework Changes**: Adding services/environments requires no code changes
+- **Reusable Framework**: Same framework works across different projects
+- **Clean Separation**: Framework concerns isolated from project specifics
+
+## Service-Agnostic External Services System
+
+### Overview
+
+The framework implements a completely service-agnostic approach for external services (databases, caches, message queues, etc.) that requires **zero code changes** to add new services.
+
+### Key Features
+
+#### 1. **Configuration-Driven Deployment**
+All external services are deployed through a single generic function that reads all configuration from YAML:
+
+```yaml
+# .tilt/service-config.yaml
+my-new-service:
+  type: "external"
+  image: "mysql:8.0"          # Any Docker image
+  ports: [3306]               # Any ports  
+  env_vars:                   # Any environment variables
+    - name: "MYSQL_ROOT_PASSWORD"
+      value: "mypassword"
+  resources:                  # Any resource limits
+    cpu: "500m"
+    memory: "1Gi"
+  health_check:               # Any health check
+    command: ["mysqladmin", "ping"]
+```
+
+#### 2. **Universal Compatibility**
+The framework can deploy any Docker-based service without code modifications:
+- **Databases**: PostgreSQL, MySQL, MongoDB, CouchDB, etc.
+- **Caches**: Redis, Memcached, etc.
+- **Message Queues**: RabbitMQ, Kafka, etc.
+- **Search Engines**: Elasticsearch, Solr, etc.
+- **Any Docker Image**: Custom services, third-party tools
+
+#### 3. **Simplified Credentials**
+For local development, the framework uses standard, predictable credentials:
+- **Database**: `testuser` / `testpass` / `testdb`
+- **Cache**: `testpass`
+- **Consistent**: Same pattern across all services
+
+### Implementation Benefits
+
+- **Zero Maintenance**: No code changes required for new external services
+- **Developer Friendly**: Standard credentials across all services
+- **Docker Compatible**: Works with any Docker image
+- **Resource Aware**: Configurable CPU, memory, and storage limits
+- **Health Monitoring**: Configurable health checks per service
 
 ## Module Responsibilities
 
@@ -143,15 +286,19 @@ tilt_config.json                 # Tilt-specific configuration
 ### 8. **services.star** - Service Orchestration
 ```starlark
 # Functions:
-- deploy_service()              # Complete service deployment orchestration
-- create_deployment_summary()   # Generate deployment summary resource
+- deploy_service()                    # Complete service deployment orchestration
+- deploy_services_orchestrated()      # Deploy multiple services with coordination
+- generate_unique_port_forwards()     # Dynamic port allocation for conflict avoidance
+- create_deployment_summary()         # Generate deployment summary resource
+- create_port_mapping_dashboard()     # Dynamic port mapping dashboard
 ```
 
 **Responsibilities:**
 - Complete service deployment workflow coordination
+- Dynamic port allocation using hash-based algorithms to avoid conflicts
 - k8s_resource configuration with comprehensive settings
-- Service-specific monitoring resource creation
-- Port forwarding and resource labeling
+- Service-agnostic port forwarding (no hardcoded service names)
+- Dynamic monitoring dashboards based on actual deployed services
 
 ### 9. **monitoring.star** - Monitoring and Validation
 ```starlark
@@ -272,22 +419,44 @@ The previous monolithic Tiltfile (1200+ lines) has been refactored into:
 
 ## Usage Examples
 
-### Basic Service Deployment
+### Environment-Based Deployment
 ```bash
-# Deploy specific services
-tilt up -- --services=database,redis,ai-agentic-mdr-oscar
+# Use predefined environments
+./scripts/setup-environment.sh minimal
+./scripts/setup-environment.sh backend-only
+./scripts/setup-environment.sh full-stack
+
+# Use custom environments
+./scripts/setup-environment.sh my-demo-setup
+./scripts/setup-environment.sh integration-test
+
+# Dry run to see what would be deployed
+./scripts/setup-environment.sh backend-only --dry-run
+```
+
+### Direct Service Deployment
+```bash
+# Deploy specific services (legacy approach)
+tilt up -- --services=database,redis,ai-agentic-test-app
 
 # Deploy with local builds
-tilt up -- --services=ai-agentic-mdr-oscar --build_local=ai-agentic-mdr-oscar
+tilt up -- --services=ai-agentic-test-app --build_local=ai-agentic-test-app
 
 # Deploy with debug mode
-tilt up -- --services=database,ai-agentic-mdr-oscar --enable_debug=true
+tilt up -- --services=database,ai-agentic-test-app --enable_debug=true
 ```
 
 ### Development Workflow
 ```bash
-# Start development environment
-tilt up -- --services=database,ai-agentic-mdr-oscar --developer_id=john
+# Modern workflow - environment-based
+./scripts/setup-environment.sh backend-only --developer-id=john
+
+# Service discovery and management
+./scripts/list-services.sh
+./scripts/service-info.sh ai-agentic-test-app
+
+# Legacy workflow - direct service specification
+tilt up -- --services=database,ai-agentic-test-app --developer_id=john
 
 # Monitor resources
 tilt trigger resource-monitor

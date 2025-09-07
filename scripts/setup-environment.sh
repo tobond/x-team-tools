@@ -40,6 +40,24 @@ if [ ! -f "Tiltfile" ] || [ ! -d ".tilt" ]; then
     exit 1
 fi
 
+# Helper function to get available environments (needed early for usage)
+get_available_environments() {
+    local env_file=".tilt/environments.yaml"
+    
+    if [ ! -f "$env_file" ]; then
+        echo "  No environments configured"
+        return
+    fi
+    
+    # Extract environment names
+    if command -v yq >/dev/null 2>&1; then
+        yq eval '.environments | keys | .[]' "$env_file" | sed 's/^/  /'
+    else
+        # Fallback: grep-based extraction
+        grep "^  [a-zA-Z]" "$env_file" | grep ":" | sed 's/://g' | sed 's/^/  /'
+    fi
+}
+
 # Parse arguments
 ENVIRONMENT=""
 DRY_RUN=false
@@ -48,21 +66,20 @@ DEVELOPER_ID=$(whoami)
 show_usage() {
     echo "Usage: $0 <environment> [options]"
     echo ""
-    echo "Predefined environments:"
-    echo "  full-stack       # All services (frontend + backend + data)"
-    echo "  backend-only     # API services + databases"
-    echo "  minimal          # Core services only"
-    echo "  staging-mirror   # Mirror staging environment locally"
-    echo "  feature-branch   # Lightweight environment for feature work"
+    echo "User-defined environments (configure in .tilt/environments.yaml):"
+    get_available_environments
     echo ""
     echo "Options:"
     echo "  --dry-run        Show what would be started without starting"
     echo "  --developer-id   Override developer ID (default: $(whoami))"
     echo ""
     echo "Examples:"
-    echo "  $0 backend-only"
-    echo "  $0 full-stack --dry-run"
-    echo "  $0 staging-mirror --developer-id=john.doe"
+    echo "  $0 minimal"
+    echo "  $0 my-custom-env --dry-run"  
+    echo "  $0 integration-test --developer-id=john.doe"
+    echo ""
+    echo "Note: Define your environments in .tilt/environments.yaml"
+    echo "      You can create any environment name with any service combination"
 }
 
 # Parse command line arguments
@@ -100,75 +117,118 @@ if [ -z "$ENVIRONMENT" ]; then
     exit 1
 fi
 
-# Define environment configurations
+# Read environment configurations from user-defined file
 get_services_for_environment() {
     local env="$1"
+    local env_file=".tilt/environments.yaml"
     
-    case "$env" in
-        "full-stack")
-            echo "ai-agentic-test-app database redis"
-            ;;
-        "backend-only")
-            echo "ai-agentic-test-app database redis"
-            ;;
-        "minimal")
-            echo "ai-agentic-test-app"
-            ;;
-        "staging-mirror")
-            echo "ai-agentic-test-app database redis"
-            ;;
-        "feature-branch")
-            echo "ai-agentic-test-app redis"
-            ;;
-        *)
-            log_error "Unknown environment: $env"
-            echo ""
-            echo "Available environments:"
-            echo "  full-stack, backend-only, minimal, staging-mirror, feature-branch"
-            exit 1
-            ;;
-    esac
+    if [ ! -f "$env_file" ]; then
+        log_error "Environment configuration file not found: $env_file"
+        echo ""
+        echo "Create $env_file to define your custom environments."
+        echo "See documentation for format and examples."
+        exit 1
+    fi
+    
+    # Extract services for the specified environment using yq or Python fallback
+    if command -v yq >/dev/null 2>&1; then
+        services=$(yq eval ".environments.$env.services[]" "$env_file" 2>/dev/null | tr '\n' ' ')
+    else
+        # Fallback: simple grep-based extraction (assumes simple YAML structure)
+        services=$(awk -v env="$env" '
+        /^  [a-zA-Z]/ && $1 == env":" { in_env = 1; next }
+        in_env && /^  [a-zA-Z]/ && $1 != env":" { in_env = 0 }
+        in_env && /services:/ { 
+            getline
+            while ($0 ~ /^      - /) {
+                gsub(/^      - /, "")
+                gsub(/"/, "")
+                printf "%s ", $0
+                getline
+            }
+        }
+        ' "$env_file")
+    fi
+    
+    if [ -z "$services" ]; then
+        log_error "Environment '$env' not found or has no services defined"
+        echo ""
+        echo "Available environments:"
+        get_available_environments
+        exit 1
+    fi
+    
+    echo "$services"
 }
 
 get_build_strategy_for_environment() {
     local env="$1"
+    local env_file=".tilt/environments.yaml"
     
-    case "$env" in
-        "staging-mirror")
-            echo "ecr"  # Use production-like images
-            ;;
-        "feature-branch"|"minimal")
-            echo "local"  # Fast local development
-            ;;
-        *)
-            echo "mixed"  # Default: ECR for external, local for development services
-            ;;
-    esac
+    if [ ! -f "$env_file" ]; then
+        echo "mixed"  # Default fallback
+        return
+    fi
+    
+    # Extract build strategy for the specified environment
+    if command -v yq >/dev/null 2>&1; then
+        build_strategy=$(yq eval ".environments.$env.build_strategy" "$env_file" 2>/dev/null)
+        if [ "$build_strategy" = "null" ] || [ -z "$build_strategy" ]; then
+            # Try global default
+            build_strategy=$(yq eval ".global.default_build_strategy" "$env_file" 2>/dev/null)
+        fi
+    else
+        # Fallback: awk-based extraction
+        build_strategy=$(awk -v env="$env" '
+        /^  [a-zA-Z]/ && $1 == env":" { in_env = 1; next }
+        in_env && /^  [a-zA-Z]/ && $1 != env":" { in_env = 0 }
+        in_env && /build_strategy:/ { 
+            gsub(/.*build_strategy: *"/, "")
+            gsub(/".*/, "")
+            print $0
+        }
+        ' "$env_file")
+    fi
+    
+    # Default to mixed if not found
+    if [ -z "$build_strategy" ] || [ "$build_strategy" = "null" ]; then
+        build_strategy="mixed"
+    fi
+    
+    echo "$build_strategy"
 }
 
 get_description_for_environment() {
     local env="$1"
+    local env_file=".tilt/environments.yaml"
     
-    case "$env" in
-        "full-stack")
-            echo "Complete environment with all frontend, backend, and data services"
-            ;;
-        "backend-only")
-            echo "Backend APIs and databases without frontend components"
-            ;;
-        "minimal")
-            echo "Essential services only for lightweight development"
-            ;;
-        "staging-mirror")
-            echo "Local replica of staging environment using production-like images"
-            ;;
-        "feature-branch")
-            echo "Lightweight setup optimized for feature development"
-            ;;
-        *)
-            echo "Custom environment"
-            ;;
-    esac
+    if [ ! -f "$env_file" ]; then
+        echo "Custom environment"
+        return
+    fi
+    
+    # Extract description for the specified environment
+    if command -v yq >/dev/null 2>&1; then
+        description=$(yq eval ".environments.$env.description" "$env_file" 2>/dev/null)
+    else
+        # Fallback: awk-based extraction
+        description=$(awk -v env="$env" '
+        /^  [a-zA-Z]/ && $1 == env":" { in_env = 1; next }
+        in_env && /^  [a-zA-Z]/ && $1 != env":" { in_env = 0 }
+        in_env && /description:/ { 
+            gsub(/.*description: *"/, "")
+            gsub(/".*/, "")
+            print $0
+        }
+        ' "$env_file")
+    fi
+    
+    # Default if not found
+    if [ -z "$description" ] || [ "$description" = "null" ]; then
+        description="User-defined environment"
+    fi
+    
+    echo "$description"
 }
 
 # Get configuration for selected environment

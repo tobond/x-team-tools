@@ -52,6 +52,9 @@ services:
     type: "external"
     image: "redis:7-alpine"
     ports: [6379]
+    env_vars:
+      - name: "REDIS_PASSWORD"
+        value: "testpass"
     resources:
       cpu: "250m"
       memory: "256Mi"

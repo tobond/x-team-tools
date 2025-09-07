@@ -46,7 +46,7 @@ data:
             print("ConfigMap data keys: " + str(list(config_data.keys())))
 
 def create_service_secret(service_name, service_config, namespace, debug_mode=False):
-    """Create Secret for sensitive service configuration using Tilt's secret extension with developer isolation"""
+    """Create Secret for sensitive service configuration using Tilt's secret extension"""
     
     secret_data = {}
     env_vars = service_config.get("env_vars", [])
@@ -86,7 +86,7 @@ stringData:
         if debug_mode:
             print("Created Secret for service: " + service_name)
             print("Secret data keys: " + str(list(secret_data.keys())))
-            print("Developer isolation applied for: " + developer_id)
+            print("Developer ID for labeling: " + developer_id)
 
 def _get_type_specific_config(service_type, service_config):
     """Get type-specific configuration for different service types"""
@@ -112,18 +112,13 @@ def _get_type_specific_config(service_type, service_config):
         })
     elif service_type == "postgres":
         config_data.update({
-            "postgres_db": service_config.get("env_vars", [{}])[0].get("value", "devdb"),
-            "postgres_user": service_config.get("env_vars", [{}])[1].get("value", "devuser")
+            "postgres_db": service_config.get("env_vars", [{}])[0].get("value", "testdb"),
+            "postgres_user": service_config.get("env_vars", [{}])[1].get("value", "testuser")
         })
     elif service_type == "redis":
         config_data.update({
             "redis_databases": "16",
             "redis_maxmemory": "128mb"
-        })
-    elif service_type == "rabbitmq":
-        config_data.update({
-            "rabbitmq_default_user": service_config.get("env_vars", [{}])[0].get("value", "devuser"),
-            "rabbitmq_default_vhost": service_config.get("env_vars", [{}])[2].get("value", "dev")
         })
     elif service_type == "mock":
         config_data.update({
@@ -134,64 +129,58 @@ def _get_type_specific_config(service_type, service_config):
     return config_data
 
 def _get_type_specific_secrets(service_type, developer_id="default"):
-    """Get type-specific secrets for different service types with developer isolation"""
+    """Get type-specific secrets for different service types with standard credentials"""
     
     secret_data = {}
     
     if service_type == "postgres":
         secret_data.update({
-            "postgres_password": "devpass_" + developer_id,
-            "postgres_user": "devuser_" + developer_id,
-            "postgres_db": "devdb_" + developer_id.replace("-", "_")
+            "postgres_password": "testpass",
+            "postgres_user": "testuser",
+            "postgres_db": "testdb"
         })
     elif service_type == "redis":
         secret_data.update({
-            "redis_password": "devpass_" + developer_id
-        })
-    elif service_type == "rabbitmq":
-        secret_data.update({
-            "rabbitmq_default_pass": "devpass_" + developer_id,
-            "rabbitmq_default_user": "devuser_" + developer_id,
-            "rabbitmq_erlang_cookie": "dev_cookie_" + developer_id
+            "redis_password": "testpass"
         })
     elif service_type == "mock":
         secret_data.update({
-            "mock_api_key": "dev_mock_key_" + developer_id,
-            "mock_secret": "dev_mock_secret_" + developer_id
+            "mock_api_key": "dev_mock_key",
+            "mock_secret": "dev_mock_secret"
         })
     elif service_type == "python":
         # Add Python-specific secrets if needed
         secret_data.update({
-            "api_key": "dev_api_key_" + developer_id,
-            "secret_key": "dev_secret_" + developer_id
+            "api_key": "dev_api_key",
+            "secret_key": "dev_secret"
         })
     elif service_type == "java":
         # Add Java-specific secrets if needed
         secret_data.update({
-            "datasource_password": "dev_db_pass_" + developer_id
+            "datasource_password": "dev_db_pass"
         })
     elif service_type == "nodejs":
         # Add Node.js-specific secrets if needed
         secret_data.update({
-            "session_secret": "dev_session_" + developer_id,
-            "jwt_secret": "dev_jwt_" + developer_id
+            "session_secret": "dev_session",
+            "jwt_secret": "dev_jwt"
         })
     elif service_type == "go":
         # Add Go-specific secrets if needed
         secret_data.update({
-            "auth_token": "dev_token_" + developer_id
+            "auth_token": "dev_token"
         })
     
     return secret_data
 
 def _get_developer_specific_secrets(developer_id, service_name):
-    """Get developer-specific secrets for isolation and personalization"""
+    """Get developer-specific secrets for labeling and identification"""
     
     secret_data = {
         "developer_id": developer_id,
-        "developer_token": "dev_token_" + developer_id + "_" + service_name,
-        "environment_id": "local_" + developer_id,
-        "isolation_key": "isolation_" + developer_id
+        "developer_token": "dev_token_" + service_name,
+        "environment_id": "local_dev",
+        "isolation_key": "local_dev"
     }
     
     # Load developer-specific secrets from file if exists

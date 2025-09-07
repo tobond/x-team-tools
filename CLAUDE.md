@@ -89,7 +89,7 @@ Services are defined in `.tilt/service-config.yaml`:
 
 ### Service Types Supported
 - **python**: Python applications with live reload
-- **external**: External services (postgres, redis, rabbitmq, mock)
+- **external**: External services (postgres, redis, mock)
 - **java**: Java applications (Spring Boot, etc.)
 - **go**: Go applications with fast rebuilds
 - **node**: Node.js applications

@@ -16,6 +16,7 @@ def parse_tilt_config():
     config.define_string("cluster_type", args=False, usage="Local cluster type: kind|k3d|docker-desktop")
     config.define_bool("enable_debug", args=False, usage="Enable debug mode with verbose logging")
     config.define_string_list("build_local", args=False, usage="List of services to build locally instead of using ECR")
+    config.define_string_list("services", args=False, usage="List of services to deploy (if not specified, all services are deployed)")
     config.define_string_list("disable_services", args=False, usage="List of services to disable (exclude from deployment)")
     config.define_string_list("ecr_versions", args=False, usage="ECR image versions in format service:version")
     config.define_string_list("env_overrides", args=False, usage="Environment variable overrides in format service:VAR=value")
@@ -48,7 +49,7 @@ def parse_tilt_config():
     # Build configuration object with defaults, merging developer config
     tilt_config = {
         "developer_id": cfg.get("developer_id", developer_config.get("developer_id", os.environ.get("USER", "dev"))),
-        "services_to_deploy": cfg.get("enable_services", developer_config.get("services_to_deploy", [])),
+        "services_to_deploy": cfg.get("services", developer_config.get("services_to_deploy", [])),
         "debug_mode": cfg.get("enable_debug", developer_config.get("debug_mode", False)),
         "build_local_services": cfg.get("build_local", developer_config.get("build_local_services", [])),
         "disabled_services": cfg.get("disable_services", []),

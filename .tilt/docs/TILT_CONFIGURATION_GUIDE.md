@@ -21,8 +21,33 @@ This guide covers advanced configuration options and customization for the Tilt-
 |------|---------|-------|
 | `Tiltfile` | Main orchestration logic | Global |
 | `.tilt/service-config.yaml` | Service definitions | Team-wide |
+| `.tilt/environments.yaml` | User-defined environments | Team-wide |
 | `.tilt/developer-config.yaml` | Developer preferences | Individual |
 | `tilt_config.json` | Tilt-specific settings | Team-wide |
+
+### Configuration Flag Support
+
+The system supports both legacy and modern configuration flags for backward compatibility:
+
+| Purpose | Modern Flag | Legacy Flag | Example |
+|---------|-------------|-------------|---------|
+| Service Selection | `--services` | `enable_services` (positional) | `--services=app1,app2` |
+| Local Builds | `--build_local` | Same | `--build_local=app1` |
+| Developer ID | `--developer_id` | Same | `--developer_id=john` |
+| Debug Mode | `--enable_debug` | Same | `--enable_debug=true` |
+| Build Strategy | `--build_strategy` | N/A | `--build_strategy=local` |
+
+#### Usage Examples
+```bash
+# Modern named flags (recommended)
+tilt up -- --services=app1,app2 --build_local=app1
+
+# Legacy positional services (still supported)
+tilt up app1 app2 -- --build_local=app1
+
+# Mixed usage (both work)
+tilt up -- --services=app1,app2 --developer_id=john --enable_debug=true
+```
 
 ### Configuration Hierarchy
 
@@ -418,14 +443,24 @@ external_services:
 ### Mock Services
 
 ```yaml
-external_services:
-  mock_apis:
-    enabled: true
-    services:
-      - name: "external-api"
-        port: 9000
-        image: "mockserver/mockserver:latest"
-        config: "./mocks/external-api.json"
+# Example: Generic mock service configuration
+# Users define their own mock services based on their needs
+services:
+  my-mock-service:
+    type: "external"
+    image: "mockserver/mockserver:latest"
+    ports: [9000]
+    env_vars:
+      - name: "MOCKSERVER_INITIALIZATION_JSON_PATH"
+        value: "/config/expectations.json"
+    resources:
+      cpu: "100m"
+      memory: "256Mi"
+    # Volume mount for mock configuration
+    volumes:
+      - name: "mock-config"
+        mount_path: "/config"
+        config_map: "my-mock-service-config"
 ```
 
 ## Advanced Features
@@ -486,14 +521,32 @@ services:
 
 ## Command Line Usage
 
-### Basic Commands
+### Environment-Based Commands (Recommended)
+
+```bash
+# Modern approach: Use predefined environments
+./scripts/setup-environment.sh minimal
+./scripts/setup-environment.sh backend-only  
+./scripts/setup-environment.sh full-stack
+
+# Custom environments
+./scripts/setup-environment.sh my-demo-setup
+./scripts/setup-environment.sh integration-test
+
+# With options
+./scripts/setup-environment.sh backend-only --developer-id=john-doe
+./scripts/setup-environment.sh minimal --dry-run
+```
+
+### Direct Service Commands (Legacy)
 
 ```bash
 # Start with default configuration
 tilt up
 
-# Start specific services
+# Start specific services (supports both flag formats)
 tilt up -- --services=service1,service2
+tilt up service1 service2  # Alternative positional format
 
 # Start with developer ID
 tilt up -- --developer_id=john-doe
@@ -511,14 +564,20 @@ tilt up -- --build_local=service1,service2
 # Start with custom configuration file
 tilt up --file=./custom-tiltfile
 
-# Start with environment override
-tilt up -- --environment=testing
+# Advanced service customization
+tilt up -- --services=app1,app2 \
+           --build_strategy=mixed \
+           --build_local=app1 \
+           --ecr_versions=app2:v1.2.3 \
+           --env_overrides=app1:LOG_LEVEL=DEBUG \
+           --disable_services=app3
 
-# Start with resource limits
-tilt up -- --cpu_limit=2 --memory_limit=4Gi
+# Service discovery and management
+./scripts/list-services.sh
+./scripts/service-info.sh my-service
 
-# Start with port forwarding disabled
-tilt up -- --disable_port_forwards=true
+# Environment management
+./scripts/setup-environment.sh --help  # Shows all available environments
 ```
 
 ## Troubleshooting Configuration

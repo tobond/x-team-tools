@@ -1,6 +1,27 @@
 """
-External service and dependency management
-Handles deployment of databases, message queues, cache services, and mock services
+External service and dependency management - FULLY SERVICE-AGNOSTIC
+
+This module uses a completely configuration-driven approach. Adding new external services 
+requires NO code changes - everything is configured in .tilt/service-config.yaml.
+
+ADDING NEW EXTERNAL SERVICES:
+To add any external service (MySQL, MongoDB, Kafka, Elasticsearch, etc.), simply add it to 
+.tilt/service-config.yaml:
+
+  my-new-service:
+    type: "external"
+    image: "mysql:8.0"     # Any Docker image
+    ports: [3306]          # Exposed ports  
+    env_vars:              # Environment variables
+      - name: "MYSQL_ROOT_PASSWORD"
+        value: "mypassword"
+    resources:             # Resource limits
+      cpu: "500m"
+      memory: "1Gi"
+    health_check:          # Health check command
+      command: ["mysqladmin", "ping", "-h", "localhost"]
+
+No code changes required - everything is configuration-driven and service-agnostic.
 """
 
 def generate_k8s_manifests(service_name, service_config, namespace, image_name, global_config, developer_id):
@@ -130,28 +151,21 @@ stringData:
         k8s_yaml(secret_yaml)
 
 def deploy_external_services(external_services, namespace, global_config, developer_id, debug_mode=False):
-    """Deploy external services like databases, queues, and mock services"""
+    """Deploy external services using fully generic, configuration-driven approach"""
     
     deployed_externals = []
     
     for service_name, service_config in external_services.items():
-        service_type = service_config.get("type", "generic")
-        
         if debug_mode:
-            print("🔧 Deploying external service: {} (type: {})".format(service_name, service_type))
+            print("🔧 Deploying external service: {} (image: {})".format(
+                service_name, 
+                service_config.get("image", "not specified")
+            ))
         
-        # Deploy based on service type
-        if service_type == "postgres":
-            result = deploy_postgres_database(service_name, service_config, namespace, global_config, developer_id, debug_mode)
-        elif service_type == "redis":
-            result = deploy_redis_cache(service_name, service_config, namespace, global_config, developer_id, debug_mode)
-        elif service_type == "rabbitmq":
-            result = deploy_rabbitmq_queue(service_name, service_config, namespace, global_config, developer_id, debug_mode)
-        elif service_type == "mock":
-            result = deploy_mock_service(service_name, service_config, namespace, global_config, developer_id, debug_mode)
-        else:
-            result = deploy_generic_external_service(service_name, service_config, namespace, global_config, developer_id, debug_mode)
-        
+        # Use single generic deployment function for all external services
+        result = deploy_generic_external_service(
+            service_name, service_config, namespace, global_config, developer_id, debug_mode
+        )
         deployed_externals.append(result)
     
     # Setup external service monitoring
@@ -243,47 +257,6 @@ def deploy_redis_cache(service_name, service_config, namespace, global_config, d
         "developer_id": developer_id
     }
 
-def deploy_rabbitmq_queue(service_name, service_config, namespace, global_config, developer_id, debug_mode=False):
-    """Deploy RabbitMQ message queue with developer isolation"""
-    
-    # Create developer-specific RabbitMQ configuration
-    rabbitmq_config = _create_rabbitmq_config(service_config, developer_id)
-    
-    # Create ConfigMaps and Secrets
-    create_service_configmap(service_name, rabbitmq_config, namespace, debug_mode)
-    create_service_secret(service_name, rabbitmq_config, namespace, debug_mode)
-    
-    # Generate RabbitMQ manifests
-    manifests = _generate_rabbitmq_manifests(service_name, rabbitmq_config, namespace, developer_id)
-    
-    # Apply manifests
-    k8s_yaml(manifests, allow_duplicates=False, validate=True)
-    
-    # Configure k8s resource
-    k8s_resource(
-        service_name,
-        port_forwards=["5672:5672", "15672:15672"],  # AMQP and Management UI
-        labels=[
-            "category:messaging",
-            "type:rabbitmq",
-            "developer:" + developer_id,
-            "tier:data"
-        ],
-        auto_init=True,
-        trigger_mode=TRIGGER_MODE_MANUAL,
-        pod_readiness="wait"
-    )
-    
-    # Setup RabbitMQ initialization
-    _setup_rabbitmq_initialization(service_name, namespace, developer_id, debug_mode)
-    
-    return {
-        "name": service_name,
-        "type": "rabbitmq",
-        "ports": [5672, 15672],
-        "management_ui": "http://localhost:15672",
-        "developer_id": developer_id
-    }
 
 def deploy_mock_service(service_name, service_config, namespace, global_config, developer_id, debug_mode=False):
     """Deploy configurable mock service for external APIs"""
@@ -329,14 +302,16 @@ def deploy_mock_service(service_name, service_config, namespace, global_config, 
     }
 
 def deploy_generic_external_service(service_name, service_config, namespace, global_config, developer_id, debug_mode=False):
-    """Deploy generic external service with basic configuration"""
+    """Deploy generic external service using configuration-driven approach"""
     
     # Create ConfigMaps and Secrets
     create_service_configmap(service_name, service_config, namespace, debug_mode)
     create_service_secret(service_name, service_config, namespace, debug_mode)
     
-    # Use existing manifest generation
-    image_name = service_config.get("ecr_image", "alpine:latest")
+    # Get image from service configuration - priority: image > ecr_image > default
+    image_name = service_config.get("image") or service_config.get("ecr_image", "alpine:latest")
+    
+    # Generate manifests using existing k8s_manifests.star function
     manifests = generate_k8s_manifests(
         service_name, service_config, namespace, image_name, global_config, developer_id
     )
@@ -344,21 +319,29 @@ def deploy_generic_external_service(service_name, service_config, namespace, glo
     # Apply manifests
     k8s_yaml(manifests, allow_duplicates=False, validate=True)
     
-    # Configure k8s resource
+    # Configure k8s resource with flexible port forwarding
     ports = service_config.get("ports", [])
+    service_type = service_config.get("type", "external")
+    
     k8s_resource(
         service_name,
         port_forwards=["{}:{}".format(port, port) for port in ports] if ports else [],
         labels=[
             "category:external",
-            "type:generic",
+            "type:" + service_type,
             "developer:" + developer_id,
-            "tier:service"
+            "tier:service",
+            "image:" + image_name.split(":")[0].replace("/", "_") if image_name else "unknown"
         ],
         auto_init=True,
         trigger_mode=TRIGGER_MODE_MANUAL,
         pod_readiness="wait"
     )
+    
+    # Add optional initialization commands if specified in config
+    init_commands = service_config.get("init_commands", [])
+    if init_commands and debug_mode:
+        print("Service {} has {} initialization commands".format(service_name, len(init_commands)))
     
     return {
         "name": service_name,
@@ -370,8 +353,9 @@ def deploy_generic_external_service(service_name, service_config, namespace, glo
 def _create_postgres_config(service_config, developer_id):
     """Create PostgreSQL configuration with developer isolation"""
     
-    db_name = "devdb_" + developer_id.replace("-", "_")
-    db_user = "devuser_" + developer_id.replace("-", "_")
+    # Use standard database credentials for local development
+    db_name = "testdb"
+    db_user = "testuser"
     
     return {
         "type": "postgres",
@@ -379,7 +363,7 @@ def _create_postgres_config(service_config, developer_id):
         "env_vars": [
             {"name": "POSTGRES_DB", "value": db_name, "from_configmap": True},
             {"name": "POSTGRES_USER", "value": db_user, "from_configmap": True},
-            {"name": "POSTGRES_PASSWORD", "value": "devpass_" + developer_id, "from_secret": True, "sensitive": True},
+            {"name": "POSTGRES_PASSWORD", "value": "testpass", "from_secret": True, "sensitive": True},
             {"name": "PGDATA", "value": "/var/lib/postgresql/data/pgdata", "from_configmap": True}
         ],
         "resources": service_config.get("resources", {"cpu": "250m", "memory": "512Mi"}),
@@ -396,7 +380,7 @@ def _create_redis_config(service_config, developer_id):
         "type": "redis",
         "ports": [6379],
         "env_vars": [
-            {"name": "REDIS_PASSWORD", "value": "devpass_" + developer_id, "from_secret": True, "sensitive": True},
+            {"name": "REDIS_PASSWORD", "value": "testpass", "from_secret": True, "sensitive": True},
             {"name": "REDIS_DATABASES", "value": "16", "from_configmap": True},
             {"name": "REDIS_MAXMEMORY", "value": "128mb", "from_configmap": True}
         ],
@@ -407,24 +391,6 @@ def _create_redis_config(service_config, developer_id):
         ]
     }
 
-def _create_rabbitmq_config(service_config, developer_id):
-    """Create RabbitMQ configuration with developer isolation"""
-    
-    return {
-        "type": "rabbitmq",
-        "ports": [5672, 15672],
-        "env_vars": [
-            {"name": "RABBITMQ_DEFAULT_USER", "value": "devuser_" + developer_id, "from_configmap": True},
-            {"name": "RABBITMQ_DEFAULT_PASS", "value": "devpass_" + developer_id, "from_secret": True, "sensitive": True},
-            {"name": "RABBITMQ_DEFAULT_VHOST", "value": "dev_" + developer_id, "from_configmap": True},
-            {"name": "RABBITMQ_ERLANG_COOKIE", "value": "dev_cookie_" + developer_id, "from_secret": True, "sensitive": True}
-        ],
-        "resources": service_config.get("resources", {"cpu": "250m", "memory": "512Mi"}),
-        "health_check": {"path": "/api/health/checks/virtual-hosts", "port": 15672, "type": "http"},
-        "volume_mounts": [
-            {"name": "rabbitmq-data", "mount_path": "/var/lib/rabbitmq"}
-        ]
-    }
 
 def _create_mock_service_config(service_config, developer_id):
     """Create mock service configuration"""
@@ -689,133 +655,6 @@ spec:
         memory=redis_config["resources"]["memory"]
     )
 
-def _generate_rabbitmq_manifests(service_name, rabbitmq_config, namespace, developer_id):
-    """Generate RabbitMQ Kubernetes manifests with persistent volume"""
-    
-    labels = """    app: {}
-    type: rabbitmq
-    developer: {}
-    category: messaging""".format(service_name, developer_id)
-    
-    return """apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {service_name}-pvc
-  namespace: {namespace}
-  labels:
-{labels}
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: standard
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {service_name}
-  namespace: {namespace}
-  labels:
-{labels}
-spec:
-  replicas: 1
-  strategy:
-    type: Recreate
-  selector:
-    matchLabels:
-      app: {service_name}
-  template:
-    metadata:
-      labels:
-{labels}
-    spec:
-      containers:
-      - name: rabbitmq
-        image: rabbitmq:3-management-alpine
-        ports:
-        - containerPort: 5672
-          name: amqp
-        - containerPort: 15672
-          name: management
-        env:
-        - name: RABBITMQ_DEFAULT_USER
-          valueFrom:
-            configMapKeyRef:
-              name: {service_name}-config
-              key: rabbitmq_default_user
-        - name: RABBITMQ_DEFAULT_PASS
-          valueFrom:
-            secretKeyRef:
-              name: {service_name}-secret
-              key: rabbitmq_default_pass
-        - name: RABBITMQ_DEFAULT_VHOST
-          valueFrom:
-            configMapKeyRef:
-              name: {service_name}-config
-              key: rabbitmq_default_vhost
-        - name: RABBITMQ_ERLANG_COOKIE
-          valueFrom:
-            secretKeyRef:
-              name: {service_name}-secret
-              key: rabbitmq_erlang_cookie
-        resources:
-          requests:
-            cpu: {cpu}
-            memory: {memory}
-          limits:
-            cpu: {cpu}
-            memory: {memory}
-        volumeMounts:
-        - name: rabbitmq-data
-          mountPath: /var/lib/rabbitmq
-        livenessProbe:
-          exec:
-            command:
-            - rabbitmq-diagnostics
-            - -q
-            - ping
-          initialDelaySeconds: 60
-          periodSeconds: 30
-        readinessProbe:
-          exec:
-            command:
-            - rabbitmq-diagnostics
-            - -q
-            - check_port_connectivity
-          initialDelaySeconds: 20
-          periodSeconds: 10
-      volumes:
-      - name: rabbitmq-data
-        persistentVolumeClaim:
-          claimName: {service_name}-pvc
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: {service_name}
-  namespace: {namespace}
-  labels:
-{labels}
-spec:
-  selector:
-    app: {service_name}
-  ports:
-  - port: 5672
-    targetPort: 5672
-    name: amqp
-  - port: 15672
-    targetPort: 15672
-    name: management
-  type: ClusterIP
-""".format(
-        service_name=service_name,
-        namespace=namespace,
-        labels=labels,
-        cpu=rabbitmq_config["resources"]["cpu"],
-        memory=rabbitmq_config["resources"]["memory"]
-    )
 
 def _generate_mock_service_manifests(service_name, mock_config, namespace, developer_id):
     """Generate mock service Kubernetes manifests"""
@@ -1029,7 +868,7 @@ def _setup_postgres_initialization(service_name, namespace, developer_id, debug_
             
             # Create test database and tables
             echo "Creating test data..."
-            kubectl exec $POD_NAME -n {} -- psql -U devuser_{} -d devdb_{} -c "
+            kubectl exec $POD_NAME -n {} -- psql -U testuser -d testdb -c "
                 CREATE TABLE IF NOT EXISTS users (
                     id SERIAL PRIMARY KEY,
                     name VARCHAR(100) NOT NULL,
@@ -1064,7 +903,7 @@ def _setup_postgres_initialization(service_name, namespace, developer_id, debug_
             # Show database info
             echo ""
             echo "📊 Database Information:"
-            kubectl exec $POD_NAME -n {} -- psql -U devuser_{} -d devdb_{} -c "
+            kubectl exec $POD_NAME -n {} -- psql -U testuser -d testdb -c "
                 SELECT 'Users' as table_name, COUNT(*) as row_count FROM users
                 UNION ALL
                 SELECT 'Products' as table_name, COUNT(*) as row_count FROM products;
@@ -1074,11 +913,11 @@ def _setup_postgres_initialization(service_name, namespace, developer_id, debug_
             echo "🔗 Connection Information:"
             echo "  Host: localhost"
             echo "  Port: 5432"
-            echo "  Database: devdb_{}"
-            echo "  Username: devuser_{}"
-            echo "  Password: devpass_{}"
+            echo "  Database: testdb"
+            echo "  Username: testuser"
+            echo "  Password: testpass"
             echo ""
-            echo "💡 Connect using: psql -h localhost -p 5432 -U devuser_{} -d devdb_{}"
+            echo "💡 Connect using: psql -h localhost -p 5432 -U testuser -d testdb"
         else
             echo "❌ PostgreSQL pod not found"
             exit 1
@@ -1116,15 +955,15 @@ def _setup_redis_monitoring(service_name, namespace, developer_id, debug_mode):
             
             # Check Redis status
             echo "📊 Redis Status:"
-            kubectl exec $POD_NAME -n {} -- redis-cli -a devpass_{} info server | grep -E "(redis_version|uptime_in_seconds|connected_clients)"
+            kubectl exec $POD_NAME -n {} -- redis-cli -a testpass info server | grep -E "(redis_version|uptime_in_seconds|connected_clients)"
             
             echo ""
             echo "💾 Memory Usage:"
-            kubectl exec $POD_NAME -n {} -- redis-cli -a devpass_{} info memory | grep -E "(used_memory_human|maxmemory_human)"
+            kubectl exec $POD_NAME -n {} -- redis-cli -a testpass info memory | grep -E "(used_memory_human|maxmemory_human)"
             
             echo ""
             echo "🔑 Sample Test Data:"
-            kubectl exec $POD_NAME -n {} -- redis-cli -a devpass_{} eval "
+            kubectl exec $POD_NAME -n {} -- redis-cli -a testpass eval "
                 redis.call('SET', 'test:user:1', '{{\\"name\\": \\"Test User\\", \\"developer\\": \\"{}\\"}}')
                 redis.call('SET', 'test:counter', '42')
                 redis.call('LPUSH', 'test:queue', 'message1', 'message2', 'message3')
@@ -1134,7 +973,7 @@ def _setup_redis_monitoring(service_name, namespace, developer_id, debug_mode):
             
             echo ""
             echo "📈 Key Statistics:"
-            kubectl exec $POD_NAME -n {} -- redis-cli -a devpass_{} eval "
+            kubectl exec $POD_NAME -n {} -- redis-cli -a testpass eval "
                 local keys = redis.call('KEYS', '*')
                 return 'Total keys: ' .. #keys
             " 0
@@ -1143,9 +982,9 @@ def _setup_redis_monitoring(service_name, namespace, developer_id, debug_mode):
             echo "🔗 Connection Information:"
             echo "  Host: localhost"
             echo "  Port: 6379"
-            echo "  Password: devpass_{}"
+            echo "  Password: testpass"
             echo ""
-            echo "💡 Connect using: redis-cli -h localhost -p 6379 -a devpass_{}"
+            echo "💡 Connect using: redis-cli -h localhost -p 6379 -a testpass"
         else
             echo "❌ Redis pod not found"
         fi
@@ -1162,73 +1001,6 @@ def _setup_redis_monitoring(service_name, namespace, developer_id, debug_mode):
         trigger_mode=TRIGGER_MODE_MANUAL
     )
 
-def _setup_rabbitmq_initialization(service_name, namespace, developer_id, debug_mode):
-    """Setup RabbitMQ initialization with queues and exchanges"""
-    
-    local_resource(
-        service_name + "-init",
-        cmd='''
-        echo "=== RabbitMQ Message Queue Initialization ({}) ==="
-        echo "Developer: {}"
-        echo "Namespace: {}"
-        echo ""
-        
-        # Wait for RabbitMQ to be ready
-        echo "Waiting for RabbitMQ to be ready..."
-        kubectl wait --for=condition=ready pod -l app={} -n {} --timeout=120s
-        
-        POD_NAME=$(kubectl get pods -n {} -l app={} -o jsonpath='{{.items[0].metadata.name}}')
-        
-        if [ -n "$POD_NAME" ]; then
-            echo "RabbitMQ pod: $POD_NAME"
-            
-            # Create test queues and exchanges
-            echo "Creating test queues and exchanges..."
-            kubectl exec $POD_NAME -n {} -- rabbitmqctl declare_exchange dev_{} topic durable=true
-            kubectl exec $POD_NAME -n {} -- rabbitmqctl declare_queue dev_{} test.notifications durable=true
-            kubectl exec $POD_NAME -n {} -- rabbitmqctl declare_queue dev_{} test.events durable=true
-            kubectl exec $POD_NAME -n {} -- rabbitmqctl declare_queue dev_{} test.tasks durable=true
-            
-            # Bind queues to exchange
-            kubectl exec $POD_NAME -n {} -- rabbitmqctl declare_binding dev_{} test.notifications test.notifications routing_key=notifications
-            kubectl exec $POD_NAME -n {} -- rabbitmqctl declare_binding dev_{} test.events test.events routing_key=events
-            kubectl exec $POD_NAME -n {} -- rabbitmqctl declare_binding dev_{} test.tasks test.tasks routing_key=tasks
-            
-            echo "✅ Test queues and exchanges created"
-            
-            # Show queue information
-            echo ""
-            echo "📊 Queue Information:"
-            kubectl exec $POD_NAME -n {} -- rabbitmqctl list_queues -p dev_{}
-            
-            echo ""
-            echo "🔗 Connection Information:"
-            echo "  AMQP Host: localhost"
-            echo "  AMQP Port: 5672"
-            echo "  Management UI: http://localhost:15672"
-            echo "  Username: devuser_{}"
-            echo "  Password: devpass_{}"
-            echo "  Virtual Host: dev_{}"
-            echo ""
-            echo "💡 Access Management UI at: http://localhost:15672"
-        else
-            echo "❌ RabbitMQ pod not found"
-            exit 1
-        fi
-        '''.format(
-            service_name, developer_id, namespace,
-            service_name, namespace, namespace, service_name, namespace,
-            developer_id, namespace, developer_id, namespace, developer_id,
-            namespace, developer_id, namespace, developer_id,
-            namespace, developer_id, namespace, developer_id,
-            namespace, developer_id, developer_id,
-            developer_id, developer_id, developer_id
-        ),
-        deps=[service_name],
-        labels=["messaging", "initialization", "rabbitmq", developer_id],
-        auto_init=False,
-        trigger_mode=TRIGGER_MODE_MANUAL
-    )
 
 def _setup_mock_service_endpoints(service_name, mock_config, namespace, developer_id, debug_mode):
     """Setup mock service endpoint documentation and testing"""
@@ -1301,7 +1073,7 @@ def setup_external_service_monitoring(deployed_externals, namespace, developer_i
     # Group services by type
     databases = [svc for svc in deployed_externals if svc["type"] in ["postgres", "mysql", "mongodb"]]
     caches = [svc for svc in deployed_externals if svc["type"] in ["redis", "memcached"]]
-    queues = [svc for svc in deployed_externals if svc["type"] in ["rabbitmq", "kafka"]]
+    queues = [svc for svc in deployed_externals if svc["type"] in ["kafka"]]
     mocks = [svc for svc in deployed_externals if svc["type"] == "mock"]
     
     local_resource(

@@ -4,16 +4,71 @@ This guide covers the service configuration and customization features implement
 
 ## Overview
 
-The service configuration and customization system provides four main capabilities:
+The service configuration and customization system provides these main capabilities:
 
-1. **Service Enable/Disable**: Control which services are deployed
-2. **ECR Image Version Selection**: Override ECR image versions at runtime
-3. **Build Strategy Switching**: Choose between local builds and ECR images
-4. **Environment Variable Management**: Override environment variables per service
+1. **Dynamic Port Allocation**: Automatic conflict-free port forwarding for all services
+2. **Service Enable/Disable**: Control which services are deployed
+3. **ECR Image Version Selection**: Override ECR image versions at runtime
+4. **Build Strategy Switching**: Choose between local builds and ECR images
+5. **Environment Variable Management**: Override environment variables per service
+6. **User-Defined Environments**: Create custom environment configurations
 
 ## Features
 
-### 1. Service Enable/Disable Configuration System
+### 1. Dynamic Port Allocation System
+
+The framework automatically handles port forwarding for all services without conflicts, eliminating the need for manual port management.
+
+#### Key Features
+
+- **Hash-Based Port Generation**: Deterministic port assignment based on service name and container port
+- **Standard Port Preservation**: Database services keep familiar ports (5432 for PostgreSQL, 6379 for Redis)
+- **Conflict Avoidance**: Automatic detection and resolution of port conflicts
+- **Service Agnostic**: Works with any service configuration without hardcoded mappings
+
+#### Port Allocation Algorithm
+
+```bash
+# Standard ports are preserved for familiarity
+PostgreSQL: 5432 → 5432
+Redis: 6379 → 6379
+MySQL: 3306 → 3306
+MongoDB: 27017 → 27017
+Elasticsearch: 9200 → 9200
+
+# Application services get hash-based ports in range 8000-9999
+hash_input = service_name + container_port + port_index
+local_port = 8000 + (hash(hash_input) % 2000)
+```
+
+#### Benefits
+
+- **No Configuration Required**: Ports are assigned automatically
+- **Deterministic**: Same service always gets the same ports
+- **Conflict-Free**: Multiple services can run simultaneously without port conflicts
+- **Developer-Friendly**: Database ports remain familiar and predictable
+
+#### Port Mapping Dashboard
+
+The system provides a dynamic dashboard showing actual port mappings:
+
+```bash
+# View current port mappings
+tilt ui  # Navigate to "port-mapping-dashboard" resource
+```
+
+Example output:
+```
+🔗 PORT MAPPING DASHBOARD
+======================
+Service -> localhost:local_port:container_port
+
+  ai-agentic-test-app -> localhost:8123:8000
+  database -> localhost:5432:5432
+  redis -> localhost:6379:6379
+```
+
+### 2. Service Enable/Disable Configuration System
 
 Control which services are deployed without modifying configuration files.
 
@@ -130,6 +185,8 @@ tilt up -- --services=app1,app2 \
 
 The main service configuration file defines all available services and their properties:
 
+**Note**: This file should only contain service definitions. Environment combinations are now defined separately in `.tilt/environments.yaml` to maintain framework-project separation.
+
 ```yaml
 services:
   ai-agentic-mdr-oscar:
@@ -150,6 +207,43 @@ services:
     health_check:
       path: "/health"
       port: 8080
+```
+
+### Environment Configuration (`.tilt/environments.yaml`)
+
+User-defined environment configurations that specify which services to deploy together:
+
+```yaml
+# .tilt/environments.yaml
+environments:
+  # Minimal development environment
+  minimal:
+    description: "Essential services only for lightweight development"
+    services: ["ai-agentic-test-app"]
+    build_strategy: "local"
+
+  # Backend development with databases
+  backend-only:
+    description: "Backend APIs and databases without frontend components"
+    services: ["ai-agentic-test-app", "database", "redis"]
+    build_strategy: "mixed"
+
+  # Complete development environment
+  full-stack:
+    description: "Complete environment with all frontend, backend, and data services"
+    services: ["ai-agentic-test-app", "database", "redis", "frontend"]
+    build_strategy: "mixed"
+
+  # Custom user environments
+  my-demo-setup:
+    description: "Custom demo environment"
+    services: ["ai-agentic-test-app", "redis"]
+    build_strategy: "local"
+
+# Global environment settings
+global:
+  default_build_strategy: "mixed"
+  allowed_build_strategies: ["local", "ecr", "mixed"]
 ```
 
 ### Tilt Configuration (`tilt_config.json`)
@@ -324,6 +418,102 @@ Creates the ECR version monitoring dashboard.
 5. **Resource Monitoring**: Use dashboards to monitor customizations and their effects
 6. **Debug Mode**: Enable debug mode when troubleshooting customization issues
 
+## Adding New External Services
+
+### Zero-Code Service Addition
+
+The framework uses a completely service-agnostic approach. Adding **any** external service requires **zero code changes** - just add to `.tilt/service-config.yaml`:
+
+```yaml
+# Example: Adding MySQL database
+mysql:
+  type: "external"
+  image: "mysql:8.0"
+  ports: [3306]
+  env_vars:
+    - name: "MYSQL_ROOT_PASSWORD"
+      value: "testpass"
+    - name: "MYSQL_DATABASE"  
+      value: "testdb"
+    - name: "MYSQL_USER"
+      value: "testuser"
+    - name: "MYSQL_PASSWORD"
+      value: "testpass"
+  resources:
+    cpu: "500m"
+    memory: "1Gi"
+  health_check:
+    command: ["mysqladmin", "ping", "-h", "localhost", "-u", "testuser", "-ptestpass"]
+
+# Example: Adding Elasticsearch
+elasticsearch:
+  type: "external" 
+  image: "elasticsearch:8.11.0"
+  ports: [9200, 9300]
+  env_vars:
+    - name: "discovery.type"
+      value: "single-node"
+    - name: "ES_JAVA_OPTS"
+      value: "-Xms512m -Xmx512m"
+  resources:
+    cpu: "1000m"
+    memory: "2Gi"
+
+# Example: Adding RabbitMQ
+rabbitmq:
+  type: "external"
+  image: "rabbitmq:3-management"
+  ports: [5672, 15672]
+  env_vars:
+    - name: "RABBITMQ_DEFAULT_USER"
+      value: "testuser"
+    - name: "RABBITMQ_DEFAULT_PASS"
+      value: "testpass"
+  resources:
+    cpu: "250m"
+    memory: "512Mi"
+  health_check:
+    command: ["rabbitmq-diagnostics", "ping"]
+```
+
+### Universal Compatibility
+
+The service-agnostic framework supports **any Docker-based service**:
+
+- **Databases**: PostgreSQL, MySQL, MongoDB, CouchDB, CockroachDB
+- **Caches**: Redis, Memcached, Hazelcast
+- **Message Queues**: RabbitMQ, Apache Kafka, NATS
+- **Search Engines**: Elasticsearch, OpenSearch, Solr
+- **Monitoring**: Prometheus, Grafana, Jaeger
+- **Custom Services**: Any Docker image
+
+### Standard Configuration Pattern
+
+All external services follow the same configuration pattern:
+
+```yaml
+service-name:
+  type: "external"              # Always "external" for infrastructure
+  image: "image:tag"            # Any Docker image
+  ports: [port1, port2]         # Exposed ports
+  env_vars:                     # Environment variables
+    - name: "ENV_NAME"
+      value: "env_value"
+  resources:                    # Resource limits
+    cpu: "500m"
+    memory: "1Gi"
+  health_check:                 # Health check (optional)
+    command: ["health", "check", "command"]
+```
+
+### Benefits
+
+- **Zero Maintenance**: No code changes for new services
+- **Universal**: Works with any Docker image
+- **Standard Credentials**: Consistent `testuser`/`testpass` pattern
+- **Auto Configuration**: ConfigMaps and Secrets generated automatically
+- **Health Monitoring**: Configurable health checks per service
+
 ## Requirements Satisfied
 
 This implementation satisfies the following requirements from the specification:
@@ -332,5 +522,6 @@ This implementation satisfies the following requirements from the specification:
 - **Requirement 5.2**: ECR image version selection ✅
 - **Requirement 5.3**: Local build vs ECR image switching ✅
 - **Requirement 2.4**: Multiple image sources support ✅
+- **NEW**: Service-agnostic external service deployment ✅
 
 The system provides comprehensive service configuration and customization capabilities while maintaining the modular architecture and safety-first approach of the Tilt development environment.

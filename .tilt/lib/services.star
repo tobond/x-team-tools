@@ -11,26 +11,41 @@ load('config.star', 'apply_service_customizations', 'get_effective_build_strateg
 load('error_handling.star', 'handle_service_deployment_error')
 
 def generate_unique_port_forwards(service_name, ports):
-    """Generate unique local port forwards for a service to avoid conflicts"""
+    """Generate unique local port forwards for a service to avoid conflicts
+    
+    Uses a dynamic port allocation strategy based on:
+    1. Standard ports (5432 for postgres, 6379 for redis, etc.) get preserved when possible
+    2. Hash-based port allocation to avoid conflicts between services
+    3. Sequential allocation for services with multiple ports
+    """
     if not ports:
         return []
     
-    # Simple port mapping: service index determines base port
-    # ai-agentic-test-app -> 8000, user-service -> 8001, test-service -> 8002, etc.
-    service_port_map = {
-        "ai-agentic-test-app": 8000,
-        "user-service": 8001, 
-        "test-service": 8002,
-        "database": 5432,
-        "redis": 6379,
-        "rabbitmq": 5672,
+    # Standard service ports that should be preserved to maintain developer familiarity
+    standard_ports = {
+        5432: 5432,  # PostgreSQL
+        6379: 6379,  # Redis
+        3306: 3306,  # MySQL
+        27017: 27017,  # MongoDB
+        9200: 9200,  # Elasticsearch
     }
-    
-    base_local_port = service_port_map.get(service_name, 8000 + hash(service_name) % 100)
     
     port_forwards = []
     for i, container_port in enumerate(ports):
-        local_port = base_local_port + i
+        # Use standard port if it matches and this is the first port
+        if i == 0 and container_port in standard_ports:
+            local_port = standard_ports[container_port]
+        else:
+            # Generate deterministic but unique port based on service name and port number
+            # Base range: 8000-9999 for application services
+            hash_input = service_name + str(container_port) + str(i)
+            port_hash = abs(hash(hash_input)) % 2000  # 0-1999
+            local_port = 8000 + port_hash
+            
+            # Avoid conflicts with standard ports
+            while local_port in standard_ports.values():
+                local_port = local_port + 1 if local_port < 9999 else 8000
+        
         port_forwards.append("{}:{}".format(local_port, container_port))
     
     return port_forwards
@@ -117,20 +132,38 @@ def create_endpoint_dashboard(deployed_services, namespace):
             labels=['endpoints']
         )
 
-def create_port_mapping_dashboard():
-    """Create dashboard showing port mappings to help developers"""
+def create_port_mapping_dashboard(deployed_services):
+    """Create dynamic dashboard showing actual port mappings for deployed services"""
+    
+    if not deployed_services:
+        return
+    
+    # Generate dynamic port mappings for each deployed service
+    mapping_lines = []
+    for service in deployed_services:
+        service_name = service["name"]
+        service_ports = service.get("ports", [])
+        
+        if service_ports:
+            # Generate the same port forwards that were actually created
+            port_forwards = generate_unique_port_forwards(service_name, service_ports)
+            for port_forward in port_forwards:
+                local_port, container_port = port_forward.split(":")
+                mapping_lines.append("  {} -> localhost:{}:{}".format(
+                    service_name, local_port, container_port
+                ))
+        else:
+            mapping_lines.append("  {} -> (no ports exposed)".format(service_name))
+    
+    # Build dynamic command with actual service mappings
+    mappings_text = "\\n".join(mapping_lines)
     mapping_cmd = '''echo "🔗 PORT MAPPING DASHBOARD
 ======================
 Service -> localhost:local_port:container_port
 
-  ai-agentic-test-app -> localhost:8000:8000
-  user-service -> localhost:8001:8000  
-  test-service -> localhost:8002:8000
-  database -> localhost:5432:5432
-  redis -> localhost:6379:6379
-  rabbitmq -> localhost:5672:5672
+{}
 
-💡 Access your services at the local ports above"'''
+💡 Access your services at the local ports above"'''.format(mappings_text)
     
     local_resource(
         'port-mapping-dashboard',
