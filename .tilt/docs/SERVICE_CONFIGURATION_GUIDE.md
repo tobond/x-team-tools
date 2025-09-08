@@ -254,7 +254,7 @@ Team-wide Tilt settings and defaults:
 {
   "team_settings": {
     "default_developer_namespace_prefix": "dev-",
-    "default_cluster_type": "kind",
+    "default_cluster_type": "docker-desktop",
     "default_build_strategy": "ecr"
   }
 }

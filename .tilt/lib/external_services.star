@@ -57,6 +57,7 @@ spec:
       containers:
       - name: {service_name}
         image: {image_name}
+        imagePullPolicy: IfNotPresent
         ports:
 {port_config}
         resources:
@@ -469,7 +470,8 @@ spec:
     spec:
       containers:
       - name: postgres
-        image: postgres:14-alpine
+        image: postgres:16.4
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5432
           name: postgres
@@ -594,6 +596,7 @@ spec:
       containers:
       - name: redis
         image: redis:7-alpine
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 6379
           name: redis
@@ -794,6 +797,7 @@ spec:
       containers:
       - name: mock-service
         image: python:3.9-alpine
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: {port}
           name: http

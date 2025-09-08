@@ -19,21 +19,19 @@ This guide outlines best practices for using Tilt effectively in your developmen
 
 #### Starting Your Day
 ```bash
-# 1. Pull latest changes
-git pull origin main
 
-# 2. Check available services and start environment
+# 1. Check available services and start environment
 ./scripts/list-services.sh
 ./scripts/setup-environment.sh backend-only
 
-# 3. Verify services are running
+# 2. Verify services are running
 # Check Tilt UI at http://localhost:10350
 ```
 
 #### During Development
 - **Make small, incremental changes** to leverage live updates
 - **Monitor the Tilt UI** for build status and logs
-- **Use port forwarding** to test services locally
+- **Use port forwarding** to test services locally (setup automatically)
 - **Check resource usage** periodically to avoid cluster overload
 
 #### Ending Your Day

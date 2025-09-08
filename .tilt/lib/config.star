@@ -259,8 +259,8 @@ def _validate_service_config(service_name, service_config):
 
 REQUIRED CONFIGURATION FOR EXTERNAL SERVICE:
 {}:
-  type: "external"         # Service type
-  image: "postgres:15"     # Docker image reference
+  type: "external"        # Service type
+  image: "postgres:16.4"  # Docker image reference
   ports: [5432]           # Optional: service ports
   dependencies: []        # Optional: service dependencies
   env_vars:               # Optional: environment variables

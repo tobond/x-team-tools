@@ -32,7 +32,7 @@ services:
   # Database service (PostgreSQL)
   database:
     type: "external"
-    image: "postgres:15"
+    image: "postgres:16.4"
     ports: [5432]
     env_vars:
       - name: "POSTGRES_DB"
