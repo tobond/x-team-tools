@@ -102,22 +102,46 @@ def setup_service_dependencies(services, service_configs):
 ## Service Configuration Schema
 
 ### Enhanced Service Definition
+
+**Each service must specify exactly ONE build strategy:**
+
+**Option 1: Dockerfile-based Build**
 ```yaml
 services:
-  service-name:
-    type: "python|java|go|nodejs|postgres|redis|generic"
-    
-    # BUILD MODE 1: Dockerfile-based (traditional)
+  dockerfile-service:
+    type: "python"
     build_context: "./path/to/service"
-    dockerfile: "./path/to/Dockerfile"
-    
-    # BUILD MODE 2: Command-based (for Maven/Gradle/etc)
+    dockerfile: "./path/to/service/Dockerfile"
+    dependencies: ["service1", "service2"]
+    ports: [8080, 8081]
+```
+
+**Option 2: Command-based Build**
+```yaml
+services:
+  command-service:
+    type: "java"
     build_command: "mvn spring-boot:build-image -Dspring-boot.build-image.imageName=myservice:latest"
-    build_working_dir: "./path/to/service"  # Working directory for build command
-    
-    # Alternative build configurations
+    build_working_dir: "./path/to/service"
+    dependencies: ["service1", "service2"]
+    ports: [8080, 8081]
+```
+
+**Option 3: ECR Pre-built Image**
+```yaml
+services:
+  ecr-service:
+    type: "python"
     ecr_image: "registry/image:tag"
-    
+    dependencies: ["service1", "service2"]
+    ports: [8080, 8081]
+```
+
+**Common Configuration (all build modes):**
+```yaml
+services:
+  any-service:
+    # ... build configuration above ...
     dependencies: ["service1", "service2"]
     ports: [8080, 8081]
     env_vars:

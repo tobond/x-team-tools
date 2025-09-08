@@ -187,13 +187,13 @@ The main service configuration file defines all available services and their pro
 
 **Note**: This file should only contain service definitions. Environment combinations are now defined separately in `.tilt/environments.yaml` to maintain framework-project separation.
 
+**Example 1: Local Dockerfile Build**
 ```yaml
 services:
-  ai-agentic-mdr-oscar:
+  python-api-local:
     type: "python"
-    build_context: "./ai-agentic-mdr-oscar"
-    dockerfile: "./ai-agentic-mdr-oscar/Dockerfile"
-    ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/ai-agentic-mdr-oscar:latest"
+    build_context: "./services/python-api"
+    dockerfile: "./services/python-api/Dockerfile"
     dependencies: ["database", "redis"]
     ports: [8080, 8081]
     env_vars:
@@ -207,6 +207,47 @@ services:
     health_check:
       path: "/health"
       port: 8080
+```
+
+**Example 2: ECR Pre-built Image**
+```yaml
+services:
+  python-api-ecr:
+    type: "python"
+    ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/python-api:latest"
+    dependencies: ["database", "redis"]
+    ports: [8080, 8081]
+    env_vars:
+      - name: "LOG_LEVEL"
+        value: "INFO"
+      - name: "ENVIRONMENT"
+        value: "production"
+    resources:
+      cpu: "500m"
+      memory: "512Mi"
+    health_check:
+      path: "/health"
+      port: 8080
+```
+
+**Example 3: Command Build (Maven/Gradle)**
+```yaml
+services:
+  java-api-command:
+    type: "java"
+    build_command: "mvn spring-boot:build-image -Dspring-boot.build-image.imageName=java-api:latest"
+    build_working_dir: "./services/java-api"
+    dependencies: ["database"]
+    ports: [9090]
+    env_vars:
+      - name: "SPRING_PROFILES_ACTIVE"
+        value: "local"
+    resources:
+      cpu: "1000m"
+      memory: "1Gi"
+    health_check:
+      path: "/actuator/health"
+      port: 9090
 ```
 
 ### Environment Configuration (`.tilt/environments.yaml`)

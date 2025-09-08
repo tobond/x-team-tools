@@ -360,6 +360,10 @@ EXAMPLE:
         if invalid_deps:
             fail("All dependencies must be strings. Invalid dependencies: {}".format(invalid_deps))
     
+    # Validate mutually exclusive build configurations
+    if service_type != 'external':
+        _validate_mutually_exclusive_build_configs(service_name, service_config)
+    
     # Validate resources if specified
     if 'resources' in service_config:
         resources = service_config['resources']
@@ -374,6 +378,68 @@ EXAMPLE:
                 invalid_keys.append(key)
         if invalid_keys:
             fail("Invalid resource keys: {}. Valid keys: {}".format(invalid_keys, valid_resource_keys))
+
+def _validate_mutually_exclusive_build_configs(service_name, service_config):
+    """Validate that only one build strategy is specified per service"""
+    
+    # Identify which build strategies are configured
+    has_dockerfile_build = bool(service_config.get('build_context') or service_config.get('dockerfile'))
+    has_command_build = bool(service_config.get('build_command'))
+    has_ecr_image = bool(service_config.get('ecr_image'))
+    
+    # Count how many build strategies are configured
+    build_strategies_count = 0
+    if has_dockerfile_build:
+        build_strategies_count += 1
+    if has_command_build:
+        build_strategies_count += 1
+    if has_ecr_image:
+        build_strategies_count += 1
+    
+    if build_strategies_count > 1:
+        configured_strategies = []
+        if has_dockerfile_build:
+            configured_strategies.append("Dockerfile build (build_context/dockerfile)")
+        if has_command_build:
+            configured_strategies.append("Command build (build_command)")  
+        if has_ecr_image:
+            configured_strategies.append("ECR image (ecr_image)")
+            
+        fail("""🚨 CONFLICTING BUILD CONFIGURATIONS: Service '{}'
+
+PROBLEM: Multiple build strategies specified simultaneously:
+{}
+
+SOLUTION: Choose exactly ONE build approach:
+
+1️⃣  DOCKERFILE BUILD (local source code):
+   {}:
+     type: "python"
+     build_context: "./path/to/service"
+     dockerfile: "./path/to/service/Dockerfile"
+     
+2️⃣  COMMAND BUILD (Maven/Gradle/etc):
+   {}:
+     type: "java"
+     build_command: "mvn spring-boot:build-image -Dspring-boot.build-image.imageName={}:latest"
+     build_working_dir: "./path/to/service"
+     
+3️⃣  ECR IMAGE (pre-built):
+   {}:
+     type: "python"
+     ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/{}:latest"
+
+❌ INVALID: Cannot specify multiple build strategies for the same service.
+✅ VALID: Choose one approach based on your build requirements.
+        """.format(
+            service_name,
+            '\n'.join(['  • ' + strategy for strategy in configured_strategies]),
+            service_name,
+            service_name, 
+            service_name,
+            service_name,
+            service_name
+        ))
 
 def get_service_selection_info(service_configs):
     """Get information about available services for selection"""
