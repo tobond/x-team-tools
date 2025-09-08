@@ -121,17 +121,17 @@ Dynamically choose between building services locally or using ECR images.
 
 #### Build Strategies
 
-- **`ecr`** (default): Use ECR images for all services
-- **`local`**: Build all services locally with live updates
+- **`local`** (default): Build all services locally with live updates
+- **`ecr`**: Use ECR images for all services  
 - **`mixed`**: Use ECR for some services, local builds for others
 
 #### Usage Examples
 
 ```bash
-# Build all services locally
+# Build all services locally (default)
 tilt up -- --services=app1,app2,app3 --build_strategy=local
 
-# Use ECR for all services (default)
+# Use ECR for all services
 tilt up -- --services=app1,app2,app3 --build_strategy=ecr
 
 # Mixed strategy - specify which to build locally
@@ -242,7 +242,7 @@ environments:
 
 # Global environment settings
 global:
-  default_build_strategy: "mixed"
+  default_build_strategy: "local"
   allowed_build_strategies: ["local", "ecr", "mixed"]
 ```
 
@@ -254,8 +254,8 @@ Team-wide Tilt settings and defaults:
 {
   "team_settings": {
     "default_developer_namespace_prefix": "dev-",
-    "default_cluster_type": "docker-desktop",
-    "default_build_strategy": "ecr"
+    "default_cluster_type": "docker-desktop", 
+    "default_build_strategy": "local"
   }
 }
 ```

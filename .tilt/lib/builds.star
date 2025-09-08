@@ -326,9 +326,13 @@ def setup_build_strategy(service_name, service_config, build_local_services, deb
     if service_type == "external" and external_image:
         return _setup_external_image(service_name, service_config, debug_mode)
 
-    # Priority 2: Local builds (when explicitly requested)
+    # Priority 2: Check if ECR is explicitly configured
+    ecr_image = service_config.get("ecr_image")
+    explicitly_ecr = service_name not in build_local_services and ecr_image
+
+    # Priority 3: Local builds (default for application services)
     build_locally = service_name in build_local_services
-    if build_locally:
+    if build_locally or not explicitly_ecr:
         # Check if command-based build is specified
         build_command = service_config.get("build_command")
         if build_command:
@@ -336,7 +340,7 @@ def setup_build_strategy(service_name, service_config, build_local_services, deb
         else:
             return _setup_local_build(service_name, service_config, debug_mode)
 
-    # Priority 3: ECR builds (fallback for non-external services)
+    # Priority 4: ECR builds (when explicitly configured)
     return _setup_ecr_build(service_name, service_config, debug_mode)
 
 def _setup_external_image(service_name, service_config, debug_mode=False):

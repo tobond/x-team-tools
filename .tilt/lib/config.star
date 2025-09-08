@@ -55,7 +55,7 @@ def parse_tilt_config():
         "disabled_services": cfg.get("disable_services", []),
         "ecr_versions": ecr_version_map,
         "env_overrides": env_override_map,
-        "build_strategy": cfg.get("build_strategy", developer_config.get("build_strategy", "ecr")),
+        "build_strategy": cfg.get("build_strategy", developer_config.get("build_strategy", "local")),
         "cluster_type": cfg.get("cluster_type", developer_config.get("cluster_type", "kind")),
     }
     
@@ -544,8 +544,8 @@ def get_effective_build_strategy(service_name, service_config, tilt_config):
     if service_name in tilt_config.get("build_local_services", []):
         return "local"
     
-    # Default to ECR
-    return "ecr"
+    # Default to local builds
+    return "local"
 
 def _load_developer_config():
     """Load developer configuration from YAML file with fallback to defaults"""
