@@ -12,8 +12,7 @@ Systematically analyzes and address test failures using a coordinated multi-agen
 
 ## Examples
 ```
-/fix-tests file:///Users/diegotobon/git/sellabella-dev/backend/event-service/build/reports/tests/test/index.html
-/fix-tests backend/analytics-service/build/test-results/test/TEST-*.xml
+/fix-tests file:///Users/diegotobon/git/event-service/build/reports/tests/test/index.html
 /fix-tests test-failures.log --iterate-max=3
 ```
 
