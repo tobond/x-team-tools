@@ -15,12 +15,10 @@ def parse_tilt_config():
     config.define_string("developer_id", args=False, usage="Developer identifier for namespace isolation")
     config.define_string("cluster_type", args=False, usage="Local cluster type: kind|k3d|docker-desktop")
     config.define_bool("enable_debug", args=False, usage="Enable debug mode with verbose logging")
-    config.define_string_list("build_local", args=False, usage="List of services to build locally instead of using ECR")
     config.define_string_list("services", args=False, usage="List of services to deploy (if not specified, all services are deployed)")
     config.define_string_list("disable_services", args=False, usage="List of services to disable (exclude from deployment)")
     config.define_string_list("ecr_versions", args=False, usage="ECR image versions in format service:version")
     config.define_string_list("env_overrides", args=False, usage="Environment variable overrides in format service:VAR=value")
-    config.define_string("build_strategy", args=False, usage="Default build strategy: local|ecr|mixed")
 
     # Parse configuration
     cfg = config.parse()
@@ -51,11 +49,9 @@ def parse_tilt_config():
         "developer_id": cfg.get("developer_id", developer_config.get("developer_id", os.environ.get("USER", "dev"))),
         "services_to_deploy": cfg.get("services", developer_config.get("services_to_deploy", [])),
         "debug_mode": cfg.get("enable_debug", developer_config.get("debug_mode", False)),
-        "build_local_services": cfg.get("build_local", developer_config.get("build_local_services", [])),
         "disabled_services": cfg.get("disable_services", []),
         "ecr_versions": ecr_version_map,
         "env_overrides": env_override_map,
-        "build_strategy": cfg.get("build_strategy", developer_config.get("build_strategy", "local")),
         "cluster_type": cfg.get("cluster_type", developer_config.get("cluster_type", "kind")),
     }
     
@@ -511,13 +507,10 @@ def create_service_selection_guide(service_configs):
         
         echo "=== USAGE EXAMPLES ==="
         echo "Deploy specific services:"
-        echo "  tilt up -- --services=database,redis,ai-agentic-mdr-oscar"
-        echo ""
-        echo "Build services locally:"
-        echo "  tilt up -- --services=ai-agentic-mdr-oscar --build_local=ai-agentic-mdr-oscar"
+        echo "  tilt up -- --services=database,redis,ai-agentic-test-app"
         echo ""
         echo "Deploy with debug mode:"
-        echo "  tilt up -- --services=database,ai-agentic-mdr-oscar --enable_debug=true"
+        echo "  tilt up -- --services=database,ai-agentic-test-app --enable_debug=true"
         echo ""
         echo "=== SERVICE CUSTOMIZATION ==="
         echo "Disable specific services:"
@@ -528,10 +521,6 @@ def create_service_selection_guide(service_configs):
         echo ""
         echo "Override environment variables:"
         echo "  tilt up -- --services=app1 --env_overrides=app1:LOG_LEVEL=DEBUG,app1:PORT=9000"
-        echo ""
-        echo "Set build strategy:"
-        echo "  tilt up -- --services=app1,app2 --build_strategy=local"
-        echo "  tilt up -- --services=app1,app2 --build_strategy=mixed --build_local=app1"
         echo ""
         echo "=== SERVICE DEPENDENCIES ==="
         ''' + '\n'.join([
@@ -585,33 +574,8 @@ def apply_service_customizations(service_name, service_config, tilt_config):
         if tilt_config.get("debug_mode", False):
             print("🔧 Applied env overrides for {}: {}".format(service_name, list(overrides.keys())))
     
-    # Apply build strategy customizations
-    build_strategy = tilt_config.get("build_strategy", "ecr")
-    if build_strategy == "local":
-        # Force all services to build locally
-        customized_config["_force_local_build"] = True
-    elif build_strategy == "ecr":
-        # Force all services to use ECR (default behavior)
-        customized_config["_force_ecr_build"] = True
-    # "mixed" strategy uses the existing build_local_services list
-    
     return customized_config
 
-def get_effective_build_strategy(service_name, service_config, tilt_config):
-    """Determine the effective build strategy for a service"""
-    
-    # Check for forced strategies from build_strategy setting
-    if service_config.get("_force_local_build", False):
-        return "local"
-    elif service_config.get("_force_ecr_build", False):
-        return "ecr"
-    
-    # Check explicit build_local list
-    if service_name in tilt_config.get("build_local_services", []):
-        return "local"
-    
-    # Default to local builds
-    return "local"
 
 def _load_developer_config():
     """Load developer configuration from YAML file with fallback to defaults"""
@@ -638,8 +602,6 @@ def _load_developer_config():
         services_config = dev_config['services']
         if 'enabled' in services_config:
             result['services_to_deploy'] = services_config['enabled']
-        if 'build_locally' in services_config:
-            result['build_local_services'] = services_config['build_locally']
     
     if 'preferences' in dev_config:
         prefs = dev_config['preferences']
@@ -657,7 +619,6 @@ def create_service_customization_dashboard(tilt_config, service_configs):
         echo "🎛️  SERVICE CUSTOMIZATION DASHBOARD"
         echo "=================================="
         echo "Developer: ''' + tilt_config.get("developer_id", "unknown") + '''"
-        echo "Build Strategy: ''' + tilt_config.get("build_strategy", "ecr") + '''"
         echo ""
         
         ''' + ('''
@@ -691,14 +652,6 @@ def create_service_customization_dashboard(tilt_config, service_configs):
         echo ""
         ''' if tilt_config.get("env_overrides") else '') + '''
         
-        ''' + ('''
-        echo "🔨 LOCAL BUILD SERVICES"
-        echo "----------------------"
-        ''' + '\n        '.join([
-            'echo "  - {}"'.format(svc) for svc in tilt_config.get("build_local_services", [])
-        ]) + '''
-        echo ""
-        ''' if tilt_config.get("build_local_services") else '') + '''
         
         echo "💡 CUSTOMIZATION COMMANDS"
         echo "========================"
@@ -710,10 +663,6 @@ def create_service_customization_dashboard(tilt_config, service_configs):
         echo ""
         echo "Override environment variables:"
         echo "  tilt up -- --env_overrides=app1:LOG_LEVEL=DEBUG,app1:PORT=9000"
-        echo ""
-        echo "Set build strategy:"
-        echo "  tilt up -- --build_strategy=local  # Build all locally"
-        echo "  tilt up -- --build_strategy=mixed --build_local=app1  # Mixed strategy"
         ''',
         deps=[],
         labels=['customization', 'dashboard', 'configuration'],

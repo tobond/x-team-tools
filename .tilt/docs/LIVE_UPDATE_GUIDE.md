@@ -45,14 +45,14 @@ services:
 
 ### Enabling Live Updates
 
-Use the `--build_local` flag to enable live updates for specific services:
+Live updates are automatically enabled for services that use Dockerfile builds (services with `build_context` configuration):
 
 ```bash
-# Enable live updates for specific services
-tilt up -- --services=my-service --build_local=my-service
+# Deploy services (live updates enabled automatically for Dockerfile builds)
+tilt up -- --services=my-service
 
-# Multiple services with live updates
-tilt up -- --services=service1,service2 --build_local=service1,service2
+# Multiple services with automatic live update detection
+tilt up -- --services=service1,service2
 ```
 
 ## Language-Specific Setup
@@ -237,7 +237,7 @@ The system creates several monitoring resources in the Tilt UI:
 Enable debug mode for detailed logging:
 
 ```bash
-tilt up -- --enable_debug=true --services=my-service --build_local=my-service
+tilt up -- --enable_debug=true --services=my-service
 ```
 
 ## Best Practices

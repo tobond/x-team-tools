@@ -315,33 +315,29 @@ def get_live_updates_for_type(app_type, build_context):
             run('touch ' + RESTART_FILE, trigger=[])
         ]
 
-def setup_build_strategy(service_name, service_config, build_local_services, debug_mode=False):
-    """Setup build strategy (local Docker build, command build, ECR, or external image) for a service"""
+def setup_build_strategy(service_name, service_config, debug_mode=False):
+    """Setup build strategy using automatic detection based on service configuration fields"""
 
-    # Check if this is an external service with a pre-built image
+    # Check service type and configuration fields for automatic detection
     service_type = service_config.get("type", "generic")
     external_image = service_config.get("image")
+    ecr_image = service_config.get("ecr_image")
+    build_command = service_config.get("build_command")
 
     # Priority 1: External services with pre-built images (e.g., postgres:15, redis:7-alpine)
     if service_type == "external" and external_image:
         return _setup_external_image(service_name, service_config, debug_mode)
 
-    # Priority 2: Check if ECR is explicitly configured
-    ecr_image = service_config.get("ecr_image")
-    explicitly_ecr = service_name not in build_local_services and ecr_image
+    # Priority 2: ECR images (when explicitly configured)
+    if ecr_image:
+        return _setup_ecr_build(service_name, service_config, debug_mode)
 
-    # Priority 3: Local builds (default for application services)
-    build_locally = service_name in build_local_services
-    if build_locally or not explicitly_ecr:
-        # Check if command-based build is specified
-        build_command = service_config.get("build_command")
-        if build_command:
-            return _setup_command_build(service_name, service_config, debug_mode)
-        else:
-            return _setup_local_build(service_name, service_config, debug_mode)
+    # Priority 3: Command-based builds (when build_command is specified)
+    if build_command:
+        return _setup_command_build(service_name, service_config, debug_mode)
 
-    # Priority 4: ECR builds (when explicitly configured)
-    return _setup_ecr_build(service_name, service_config, debug_mode)
+    # Priority 4: Dockerfile builds (default for application services)
+    return _setup_local_build(service_name, service_config, debug_mode)
 
 def _setup_external_image(service_name, service_config, debug_mode=False):
     """Setup external pre-built image from Docker registry (e.g., Docker Hub, ECR Public)"""
@@ -430,11 +426,13 @@ def _setup_ecr_build(service_name, service_config, debug_mode=False):
         "ecr_image": ecr_image
     }
 
-def validate_build_requirements(service_name, service_config, build_locally, debug_mode=False):
+def validate_build_requirements(service_name, service_config, debug_mode=False):
     """Validate that all required build dependencies are available for different service types"""
 
     service_type = service_config.get("type", "generic")
     external_image = service_config.get("image")
+    ecr_image = service_config.get("ecr_image")
+    build_command = service_config.get("build_command")
 
     if debug_mode:
         print("🔍 Validating build requirements for: " + service_name)
@@ -457,51 +455,48 @@ def validate_build_requirements(service_name, service_config, build_locally, deb
 
         return validation_results
 
-    # Handle local builds
-    if build_locally:
-        build_command = service_config.get("build_command")
-        
-        # Command-based build validation
-        if build_command:
-            if debug_mode:
-                print("   🔧 Command-based build detected: " + build_command)
-            
-            build_working_dir = service_config.get("build_working_dir", "./" + service_name)
-            
-            # Validate build command is not empty
-            if not build_command or len(build_command.strip()) == 0:
-                validation_results["errors"].append("Build command cannot be empty")
-                validation_results["valid"] = False
-            
-            # Check if working directory exists
-            if not str(local('test -d ' + build_working_dir + ' && echo "exists" || echo "missing"')).strip() == "exists":
-                validation_results["errors"].append("Build working directory not found: " + build_working_dir)
-                validation_results["valid"] = False
-            
-        # Dockerfile-based build validation
-        else:
-            if debug_mode:
-                print("   📄 Dockerfile-based build detected")
-                
-            build_context = service_config.get("build_context", "./" + service_name)
-            dockerfile_path = service_config.get("dockerfile", build_context + "/Dockerfile")
-
-            # Check if Dockerfile exists
-            if not str(local('test -f ' + dockerfile_path + ' && echo "exists" || echo "missing"')).strip() == "exists":
-                validation_results["errors"].append("Dockerfile not found: " + dockerfile_path)
-                validation_results["valid"] = False
-
-            # Check if build context exists
-            if not str(local('test -d ' + build_context + ' && echo "exists" || echo "missing"')).strip() == "exists":
-                validation_results["errors"].append("Build context directory not found: " + build_context)
-                validation_results["valid"] = False
-
     # Handle ECR builds
-    else:
-        ecr_image = service_config.get("ecr_image")
-        if not ecr_image:
-            validation_results["errors"].append("ECR image not specified for service: " + service_name)
+    if ecr_image:
+        if debug_mode:
+            print("   📦 ECR image detected: " + ecr_image)
+        # ECR images don't need local validation
+        return validation_results
+
+    # Handle command-based builds
+    if build_command:
+        if debug_mode:
+            print("   🔧 Command-based build detected: " + build_command)
+        
+        build_working_dir = service_config.get("build_working_dir", "./" + service_name)
+        
+        # Validate build command is not empty
+        if not build_command or len(build_command.strip()) == 0:
+            validation_results["errors"].append("Build command cannot be empty")
             validation_results["valid"] = False
+        
+        # Check if working directory exists
+        if not str(local('test -d ' + build_working_dir + ' && echo "exists" || echo "missing"')).strip() == "exists":
+            validation_results["errors"].append("Build working directory not found: " + build_working_dir)
+            validation_results["valid"] = False
+        
+        return validation_results
+
+    # Handle Dockerfile-based builds (default)
+    if debug_mode:
+        print("   📄 Dockerfile-based build detected")
+        
+    build_context = service_config.get("build_context", "./" + service_name)
+    dockerfile_path = service_config.get("dockerfile", build_context + "/Dockerfile")
+
+    # Check if Dockerfile exists
+    if not str(local('test -f ' + dockerfile_path + ' && echo "exists" || echo "missing"')).strip() == "exists":
+        validation_results["errors"].append("Dockerfile not found: " + dockerfile_path)
+        validation_results["valid"] = False
+
+    # Check if build context exists
+    if not str(local('test -d ' + build_context + ' && echo "exists" || echo "missing"')).strip() == "exists":
+        validation_results["errors"].append("Build context directory not found: " + build_context)
+        validation_results["valid"] = False
 
     if debug_mode:
         if validation_results["valid"]:
@@ -523,14 +518,29 @@ def optimize_docker_build_context(build_context, service_type="generic", debug_m
         "include_patterns": []
     }
 
-def get_build_info(service_name, service_config, build_local_services):
-    """Get comprehensive build information for a service"""
+def get_build_info(service_name, service_config):
+    """Get comprehensive build information for a service using auto-detection"""
 
     build_context = service_config.get("build_context", "./" + service_name)
     dockerfile_path = service_config.get("dockerfile", build_context + "/Dockerfile")
     service_type = service_config.get("type", "generic")
     ecr_image = service_config.get("ecr_image")
-    build_locally = service_name in build_local_services
+    build_command = service_config.get("build_command")
+    external_image = service_config.get("image")
+    
+    # Determine build type using same auto-detection logic as setup_build_strategy
+    build_locally = True  # Default
+    image_name = service_name  # Default
+    
+    if service_type == "external" and external_image:
+        build_locally = False
+        image_name = external_image
+    elif ecr_image:
+        build_locally = False 
+        image_name = ecr_image
+    elif build_command or build_context:
+        build_locally = True
+        image_name = service_name
 
     return {
         "service_name": service_name,
@@ -539,7 +549,7 @@ def get_build_info(service_name, service_config, build_local_services):
         "dockerfile_path": dockerfile_path,
         "build_locally": build_locally,
         "ecr_image": ecr_image,
-        "image_name": service_name if build_locally else ecr_image,
+        "image_name": image_name,
         "live_updates_enabled": build_locally,
         "optimization_available": True
     }

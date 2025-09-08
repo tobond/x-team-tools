@@ -92,14 +92,10 @@ RECOVERY ACTIONS:
 2. Verify ECR authentication:
    aws ecr get-login-password | docker login --username AWS --password-stdin <ecr-url>
 
-3. Try building locally instead:
-   tilt up -- --services={} --build_local={}
+3. Check image tag in service-config.yaml
+4. Verify network connectivity to ECR
 
-4. Check image tag in service-config.yaml
-5. Verify network connectivity to ECR
-
-ALTERNATIVE: Use local build while investigating:
-   tilt up -- --build_local={}
+ALTERNATIVE: Use service with build_context for local build in service-config.yaml
         """.format(service_name, error_msg, service_name, service_name, service_name))
     
     elif "CrashLoopBackOff" in error_msg:
@@ -562,7 +558,7 @@ def setup_troubleshooting_resources(namespace, services_to_deploy):
         echo "2. IMAGE PULL ERRORS"
         echo "   Symptoms: ImagePullBackOff, ErrImagePull"
         echo "   Solutions:"
-        echo "   • Try local build: tilt up -- --build_local=<service>"
+        echo "   • Use local build: Configure build_context in service-config.yaml"
         echo "   • Check ECR auth: aws ecr get-login-password"
         echo "   • Verify image exists: aws ecr describe-images"
         echo "   • Check network connectivity"

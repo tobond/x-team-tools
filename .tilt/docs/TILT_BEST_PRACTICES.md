@@ -47,14 +47,14 @@ docker system prune -f
 
 #### Focus on One Service at a Time
 ```bash
-# Work on a specific service
-tilt up -- --services=my-active-service --build_local=my-active-service
+# Work on a specific service (build method determined automatically)
+tilt up -- --services=my-active-service
 ```
 
 #### Use Stable Dependencies
 ```bash
-# Use ECR images for services you're not changing
-tilt up -- --services=service1,service2,service3 --build_local=service1
+# Deploy multiple services (build methods determined by configuration)
+tilt up -- --services=service1,service2,service3
 ```
 
 #### Incremental Service Addition

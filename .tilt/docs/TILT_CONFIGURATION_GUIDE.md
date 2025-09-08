@@ -32,18 +32,16 @@ The system supports both legacy and modern configuration flags for backward comp
 | Purpose | Modern Flag | Legacy Flag | Example |
 |---------|-------------|-------------|---------|
 | Service Selection | `--services` | `enable_services` (positional) | `--services=app1,app2` |
-| Local Builds | `--build_local` | Same | `--build_local=app1` |
 | Developer ID | `--developer_id` | Same | `--developer_id=john` |
 | Debug Mode | `--enable_debug` | Same | `--enable_debug=true` |
-| Build Strategy | `--build_strategy` | N/A | `--build_strategy=local` |
 
 #### Usage Examples
 ```bash
 # Modern named flags (recommended)
-tilt up -- --services=app1,app2 --build_local=app1
+tilt up -- --services=app1,app2 --developer_id=john
 
 # Legacy positional services (still supported)
-tilt up app1 app2 -- --build_local=app1
+tilt up app1 app2 -- --developer_id=john
 
 # Mixed usage (both work)
 tilt up -- --services=app1,app2 --developer_id=john --enable_debug=true
@@ -207,10 +205,8 @@ services:
   enabled:
     - service1
     - service2
-  build_locally:
-    - service1
-  use_ecr:
-    - service2
+  # Services are configured with build methods in .tilt/service-config.yaml
+  # No need to specify build methods here
 ```
 
 ### Advanced Developer Settings
@@ -243,50 +239,39 @@ port_forwards:
     service2: 8090
 ```
 
-## Build Strategies
+## Automatic Build Method Detection
 
-### Local Builds with Live Updates
+### Dockerfile Builds with Live Updates
 
 ```yaml
 # Fast development cycle with live updates
 services:
   my-service:
-    build_strategy: "local"
-    live_update:
-      enabled: true
-      sync_rules:
-        - local_path: "./src"
-          remote_path: "/app/src"
-      run_commands:
-        - "pip install -r requirements.txt"
-      restart_on:
-        - "requirements.txt"
-        - "Dockerfile"
+    type: "python"
+    build_context: "./my-service"
+    dockerfile: "./my-service/Dockerfile"
+    # Live updates automatically enabled for local builds
 ```
 
-### ECR Image Strategy
+### ECR Pre-built Images
 
 ```yaml
 # Use stable ECR images for dependencies
 services:
   stable-service:
-    build_strategy: "ecr"
+    type: "python"
     ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/stable-service:v1.2.3"
-    ecr_auth:
-      region: "us-east-1"
-      profile: "default"
 ```
 
-### Hybrid Strategy
+### Command-based Builds
 
 ```yaml
-# Mix of local and ECR builds
-developer:
-  build_locally:
-    - active-service      # Service you're working on
-  use_ecr:
-    - stable-service1     # Stable dependencies
-    - stable-service2
+# Use build commands (Maven, Gradle, etc.)
+services:
+  java-service:
+    type: "java"
+    build_command: "mvn spring-boot:build-image -Dspring-boot.build-image.imageName=java-service:latest"
+    build_working_dir: "./java-service"
 ```
 
 ## Live Updates
@@ -554,8 +539,8 @@ tilt up -- --developer_id=john-doe
 # Enable debug mode
 tilt up -- --enable_debug=true
 
-# Build specific services locally
-tilt up -- --build_local=service1,service2
+# Deploy specific services (build methods from configuration)
+tilt up -- --services=service1,service2
 ```
 
 ### Advanced Commands
@@ -566,11 +551,8 @@ tilt up --file=./custom-tiltfile
 
 # Advanced service customization
 tilt up -- --services=app1,app2 \
-           --build_strategy=mixed \
-           --build_local=app1 \
-           --ecr_versions=app2:v1.2.3 \
-           --env_overrides=app1:LOG_LEVEL=DEBUG \
-           --disable_services=app3
+           --developer_id=$(whoami) \
+           --enable_debug=true
 
 # Service discovery and management
 ./scripts/list-services.sh

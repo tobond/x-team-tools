@@ -52,45 +52,44 @@ Tiltfile                         # Main orchestration file (FRAMEWORK LAYER)
 tilt_config.json                 # Tilt-specific configuration
 ```
 
-## Dynamic Port Allocation System
+## Simple Port Forwarding System
 
 ### Overview
 
-The framework implements a sophisticated dynamic port allocation system that eliminates hardcoded service-to-port mappings while ensuring conflict-free local development.
+The framework implements a straightforward port forwarding system that uses exactly the ports specified by developers in their service configuration.
 
 ### Key Features
 
-#### 1. **Hash-Based Port Generation**
+#### 1. **Direct Port Mapping**
 ```starlark
-# Generate deterministic but unique ports
-hash_input = service_name + str(container_port) + str(port_index)
-port_hash = abs(hash(hash_input)) % 2000  # 0-1999
-local_port = 8000 + port_hash
+# Use ports exactly as configured by developers
+for container_port in ports:
+    port_forwards.append("{}:{}".format(container_port, container_port))
 ```
 
-#### 2. **Standard Port Preservation**
-- PostgreSQL: 5432 → 5432
-- Redis: 6379 → 6379
-- MySQL: 3306 → 3306
-- MongoDB: 27017 → 27017
-- Elasticsearch: 9200 → 9200
+#### 2. **Developer-Controlled Ports**
+- Developers specify exactly which ports they want in service configuration
+- No dynamic allocation or modification of ports
+- Local port always matches container port
 
-#### 3. **Conflict Avoidance**
-- Automatic detection of port conflicts
-- Incremental port assignment for conflicts
-- Fallback mechanisms for edge cases
+#### 3. **Simple Configuration**
+```yaml
+services:
+  my-service:
+    ports: [8080, 8443]  # Forwards localhost:8080 → container:8080, localhost:8443 → container:8443
+```
 
-#### 4. **Dynamic Dashboard Generation**
-- Real-time port mapping display
-- Service-specific forwarding information
-- No hardcoded service references
+#### 4. **Transparent Port Mapping**
+- What you configure is what you get
+- No hidden port transformations
+- Predictable and explicit port forwarding
 
 ### Implementation Benefits
 
-- **Service Agnostic**: Works with any service configuration
-- **Deterministic**: Same service always gets same ports
-- **Developer Friendly**: Preserves familiar database ports
-- **Conflict Free**: Automatically handles port collisions
+- **Simple and Predictable**: Developers know exactly which ports will be used
+- **No Conflicts**: Developers are responsible for choosing non-conflicting ports
+- **Transparent**: No hidden logic or port transformations
+- **Direct Control**: Full developer control over port allocation
 
 ## User-Defined Environment System
 
@@ -116,20 +115,15 @@ environments:
   minimal:
     description: "Essential services only"
     services: ["ai-agentic-test-app"]
-    build_strategy: "local"
   
   backend-only:
     description: "APIs and databases"
     services: ["ai-agentic-test-app", "database", "redis"]
-    build_strategy: "mixed"
   
   custom-demo:
     description: "My custom environment"
     services: ["service-a", "service-b"]
-    build_strategy: "ecr"
 
-global:
-  default_build_strategy: "mixed"
 ```
 
 ### Benefits
@@ -273,12 +267,12 @@ For local development, the framework uses standard, predictable credentials:
 ### 7. **builds.star** - Build Management
 ```starlark
 # Functions:
-- setup_build_strategy()        # Configure local or ECR build strategy
+- setup_build_method()          # Configure build method based on service configuration
 - get_live_updates_for_type()   # Language-specific live update rules
 ```
 
 **Responsibilities:**
-- Build strategy selection (local Docker build vs ECR image pull)
+- Automatic build method detection based on service configuration fields
 - Language-specific live update configuration
 - ECR authentication and image caching
 - Build optimization and performance tuning
@@ -288,14 +282,14 @@ For local development, the framework uses standard, predictable credentials:
 # Functions:
 - deploy_service()                    # Complete service deployment orchestration
 - deploy_services_orchestrated()      # Deploy multiple services with coordination
-- generate_unique_port_forwards()     # Dynamic port allocation for conflict avoidance
+- generate_unique_port_forwards()     # Simple port forwarding using developer-configured ports
 - create_deployment_summary()         # Generate deployment summary resource
 - create_port_mapping_dashboard()     # Dynamic port mapping dashboard
 ```
 
 **Responsibilities:**
 - Complete service deployment workflow coordination
-- Dynamic port allocation using hash-based algorithms to avoid conflicts
+- Simple port forwarding using exactly the ports specified by developers
 - k8s_resource configuration with comprehensive settings
 - Service-agnostic port forwarding (no hardcoded service names)
 - Dynamic monitoring dashboards based on actual deployed services
@@ -439,8 +433,8 @@ The previous monolithic Tiltfile (1200+ lines) has been refactored into:
 # Deploy specific services (legacy approach)
 tilt up -- --services=database,redis,ai-agentic-test-app
 
-# Deploy with local builds
-tilt up -- --services=ai-agentic-test-app --build_local=ai-agentic-test-app
+# Deploy specific services (build method determined automatically)
+tilt up -- --services=ai-agentic-test-app
 
 # Deploy with debug mode
 tilt up -- --services=database,ai-agentic-test-app --enable_debug=true

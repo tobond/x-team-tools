@@ -69,7 +69,7 @@ Welcome to the x-team-tools development environment documentation. This index he
 ### I Want to Import an Existing Service
 1. Use `./scripts/import-service.sh https://github.com/user/my-service`
 2. Configure service in `.tilt/service-config.yaml` if needed
-3. Test with `tilt up -- --services=my-service --build_local=my-service`
+3. Test with `tilt up -- --services=my-service`
 4. See [TILT_CONFIGURATION_GUIDE.md](TILT_CONFIGURATION_GUIDE.md) for advanced options
 
 ### I'm Having Issues

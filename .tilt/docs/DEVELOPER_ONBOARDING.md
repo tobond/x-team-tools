@@ -102,13 +102,8 @@ services:
     - ai-agentic-mdr-oscar
     - user-management-service
   
-  # Services to build from source (vs using ECR images)
-  build_locally:
-    - ai-agentic-mdr-oscar
-  
-  # Services to pull from ECR
-  use_ecr:
-    - user-management-service
+  # Services are configured with build methods in .tilt/service-config.yaml
+  # Build methods are determined automatically from service configuration
 ```
 
 ### 3. Start Your Development Environment
@@ -223,8 +218,8 @@ tilt up
 # Start multiple services
 tilt up -- --services=service1,service2,service3
 
-# Build some locally, use ECR for others
-tilt up -- --build_local=service1,service2 --services=service1,service2,service3
+# Deploy multiple services (build methods determined automatically)
+tilt up -- --services=service1,service2,service3
 ```
 
 ### Debugging Issues

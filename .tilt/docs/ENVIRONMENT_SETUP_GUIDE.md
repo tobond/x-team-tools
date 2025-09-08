@@ -32,14 +32,8 @@ environments:
   environment-name:
     description: "Human-readable description"
     services: ["service1", "service2"]
-    build_strategy: "local|ecr|mixed"
   
   # More environments...
-
-# Global settings
-global:
-  default_build_strategy: "mixed"
-  allowed_build_strategies: ["local", "ecr", "mixed"]
 ```
 
 ### Complete Example
@@ -50,47 +44,36 @@ environments:
   minimal:
     description: "Essential services only for lightweight development"
     services: ["ai-agentic-test-app"]
-    build_strategy: "local"
 
   # Backend development with databases
   backend-only:
     description: "Backend APIs and databases without frontend components"
     services: ["ai-agentic-test-app", "database", "redis"]
-    build_strategy: "mixed"
 
   # Complete development environment
   full-stack:
     description: "Complete environment with all frontend, backend, and data services"
     services: ["ai-agentic-test-app", "database", "redis", "frontend"]
-    build_strategy: "mixed"
 
   # Production-like staging mirror
   staging-mirror:
     description: "Local replica of staging environment using production-like images"
     services: ["ai-agentic-test-app", "database", "redis"]
-    build_strategy: "ecr"
 
   # Lightweight feature development
   feature-branch:
     description: "Lightweight setup optimized for feature development"
     services: ["ai-agentic-test-app", "redis"]
-    build_strategy: "local"
 
   # Integration testing environment
   integration-test:
     description: "Integration testing environment with specific service versions"
     services: ["ai-agentic-test-app", "database"]
-    build_strategy: "ecr"
 
   # Custom demo environment
   my-demo-setup:
     description: "Custom environment for demonstrations"
     services: ["ai-agentic-test-app", "mock-api", "redis"]
-    build_strategy: "local"
-
-global:
-  default_build_strategy: "mixed"
-  allowed_build_strategies: ["local", "ecr", "mixed"]
 ```
 
 ## Usage
@@ -148,51 +131,31 @@ Options:
   --developer-id   Override developer ID (default: $(whoami))
 ```
 
-## Build Strategies
+## Automatic Build Method Detection
 
-### Local Strategy
-- All services are built locally with live updates
-- Best for active development
-- Slower initial startup, fastest iteration
+The framework automatically determines the appropriate build method for each service based on its configuration:
 
-```yaml
-my-dev-env:
-  services: ["api", "frontend"]
-  build_strategy: "local"
-```
-
-### ECR Strategy  
-- All services use pre-built images from ECR
-- Best for integration testing
-- Fastest startup, no local builds
+- **External Services** (type: "external" + image field) → Use external image directly  
+- **ECR Services** (ecr_image field) → Pull from ECR registry
+- **Command Services** (build_command field) → Use custom build command
+- **Dockerfile Services** (build_context field) → Use Docker build
 
 ```yaml
-staging-test:
-  services: ["api", "database"]
-  build_strategy: "ecr"
-```
-
-### Mixed Strategy
-- Combines local builds and ECR images
-- Build main services locally, use ECR for dependencies
-- Balanced approach for most development scenarios
-
-```yaml
-balanced-dev:
+my-environment:
   services: ["api", "database", "redis"]
-  build_strategy: "mixed"  # API built locally, database/redis from ECR
+  # Build methods determined automatically from service configuration
 ```
 
 ## Service Types and Build Behavior
 
-### Application Services (Built Locally in Mixed Strategy)
+### Application Services
 - Services with `type: "python|java|go|nodejs|crewai"`
-- Built locally when `build_strategy: "mixed"`
+- Build method determined by configuration fields (build_context, ecr_image, build_command)
 
-### External Services (Always from Images)
+### External Services  
 - Services with `type: "external"`
 - Always use images (PostgreSQL, Redis, etc.)
-- Never built locally regardless of strategy
+- Build method automatically detected from image field
 
 ## Common Environment Patterns
 
@@ -203,7 +166,6 @@ balanced-dev:
 minimal:
   description: "Lightweight setup for core development"
   services: ["main-app"]
-  build_strategy: "local"
 ```
 
 #### Full-Stack Development
@@ -211,7 +173,6 @@ minimal:
 full-stack:
   description: "Complete local development environment"
   services: ["frontend", "api", "worker", "database", "redis"]
-  build_strategy: "mixed"
 ```
 
 #### Backend-Only Development
@@ -219,7 +180,6 @@ full-stack:
 backend-only:
   description: "API development without frontend"
   services: ["api", "worker", "database", "redis"]
-  build_strategy: "mixed"
 ```
 
 ### Testing Patterns
@@ -229,7 +189,6 @@ backend-only:
 integration-test:
   description: "Stable versions for integration testing"
   services: ["api", "database", "external-service"]
-  build_strategy: "ecr"
 ```
 
 #### Performance Testing
@@ -237,7 +196,6 @@ integration-test:
 perf-test:
   description: "Production-like performance testing"
   services: ["api", "database", "cache", "load-balancer"]
-  build_strategy: "ecr"
 ```
 
 ### Specialized Patterns
@@ -247,7 +205,6 @@ perf-test:
 demo:
   description: "Clean demo setup with mock data"
   services: ["frontend", "api", "mock-data-service"]
-  build_strategy: "local"
 ```
 
 #### Debugging Environment
@@ -255,7 +212,6 @@ demo:
 debug:
   description: "Debugging with minimal external dependencies"
   services: ["api", "database"]
-  build_strategy: "local"
 ```
 
 ## Environment Validation
@@ -267,10 +223,10 @@ The system validates environments automatically:
 - Shows available services if validation fails
 - Provides guidance for adding missing services
 
-### Build Strategy Validation
-- Validates build strategy values
-- Falls back to global defaults if not specified
-- Shows allowed strategies in error messages
+### Configuration Validation
+- Validates service configuration syntax
+- Shows configuration errors with helpful messages
+- Ensures services have required fields for their build method
 
 ### Dependency Resolution
 - Automatically includes required dependencies
@@ -288,7 +244,6 @@ You can create environments on-demand by modifying `.tilt/environments.yaml`:
 experimental:
   description: "Testing new service combination"
   services: ["new-service", "database"]
-  build_strategy: "local"
 ```
 
 The new environment becomes immediately available:
@@ -305,24 +260,20 @@ Use similar environments as templates:
 base-dev:
   description: "Base development setup"
   services: ["api", "database"]
-  build_strategy: "mixed"
 
 # Extended environment
 extended-dev:
   description: "Extended development with additional services"
   services: ["api", "database", "redis", "worker"]  
-  build_strategy: "mixed"
 ```
 
 ### Environment-Specific Overrides
 
-While environments define service combinations, you can still use runtime overrides:
+While environments define service combinations, build methods are always determined by service configuration:
 
 ```bash
-# Use environment but override build strategy
+# Use environment - build methods determined automatically
 ./scripts/setup-environment.sh backend-only
-# Then in another terminal:
-tilt up -- --services=api --build_local=api
 ```
 
 ## Troubleshooting
@@ -351,14 +302,14 @@ Available services:
 
 **Solution**: Add the service to `.tilt/service-config.yaml` or remove from environment.
 
-### Invalid Build Strategy
+### Configuration Error
 ```bash
-Error: Invalid build strategy 'invalid'
-
-Allowed strategies: local, ecr, mixed
+Error: Service 'my-service' has conflicting build configuration
+- Both 'ecr_image' and 'build_context' are specified
+- Please use only one build method per service
 ```
 
-**Solution**: Use one of the allowed build strategies.
+**Solution**: Remove conflicting configuration fields from service definition.
 
 ## Best Practices
 
@@ -390,22 +341,26 @@ data-pipeline:
 # avoid: ["frontend", "database", "random-utility"]
 ```
 
-### 4. Appropriate Build Strategies
+### 4. Appropriate Service Configuration
+Ensure each service has appropriate configuration in `.tilt/service-config.yaml`:
+
 ```yaml
-# Local for active development
-active-dev:
-  services: ["my-service"]
-  build_strategy: "local"
+# Service with local Dockerfile build
+services:
+  my-service:
+    type: "python"
+    build_context: "./my-service"
+    dockerfile: "./my-service/Dockerfile"
 
-# Mixed for balanced development  
-balanced-dev:
-  services: ["my-service", "database", "redis"]
-  build_strategy: "mixed"
+# Service with ECR image
+  stable-service:
+    type: "go"
+    ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/stable:v1.0"
 
-# ECR for testing stable versions
-integration-test:
-  services: ["service1", "service2"] 
-  build_strategy: "ecr"
+# External service
+  database:
+    type: "external"
+    image: "postgres:16.4"
 ```
 
 ### 5. Environment Documentation
@@ -430,7 +385,6 @@ environments:
   backend-only:
     description: "Backend development environment"
     services: ["api", "database", "redis"]
-    build_strategy: "mixed"
 ```
 
 ### Benefits of Migration
@@ -438,6 +392,7 @@ environments:
 - **Self-Documenting**: Environments include descriptions
 - **Validation**: Automatic service and dependency validation
 - **Flexibility**: Any service combination possible
+- **Automatic Build Detection**: Build methods determined from service configuration
 - **Team Collaboration**: Team members can add environments without touching framework code
 
-This environment system provides complete flexibility while maintaining the clear separation between framework code and project-specific configuration.
+This environment system provides complete flexibility while maintaining the clear separation between framework code and project-specific configuration. Build methods are automatically detected from service configuration, eliminating the need for manual build strategy management.

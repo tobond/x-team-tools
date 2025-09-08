@@ -9,7 +9,7 @@ The service configuration and customization system provides these main capabilit
 1. **Dynamic Port Allocation**: Automatic conflict-free port forwarding for all services
 2. **Service Enable/Disable**: Control which services are deployed
 3. **ECR Image Version Selection**: Override ECR image versions at runtime
-4. **Build Strategy Switching**: Choose between local builds and ECR images
+4. **Automatic Build Detection**: Framework automatically detects appropriate build method
 5. **Environment Variable Management**: Override environment variables per service
 6. **User-Defined Environments**: Create custom environment configurations
 
@@ -115,38 +115,36 @@ tilt up -- --services=app1,app2 --ecr_versions=app1:v2.0.0
 - Version information is tracked and displayed in dashboards
 - Authentication and pulling are handled automatically
 
-### 3. Local Build vs ECR Image Switching
+### 3. Automatic Build Method Detection
 
-Dynamically choose between building services locally or using ECR images.
+The framework automatically detects the appropriate build method based on service configuration fields. No build strategy configuration is needed - simply configure the service with the desired build method.
 
-#### Build Strategies
+#### Automatic Detection Logic
 
-- **`local`** (default): Build all services locally with live updates
-- **`ecr`**: Use ECR images for all services  
-- **`mixed`**: Use ECR for some services, local builds for others
+The framework uses this priority order for build method detection:
+1. **External services** (`type: "external"` + `image` field) → External image
+2. **ECR images** (`ecr_image` field) → ECR build  
+3. **Command builds** (`build_command` field) → Command build (Maven, Gradle, etc.)
+4. **Dockerfile builds** (`build_context` field) → Dockerfile build
 
 #### Usage Examples
 
 ```bash
-# Build all services locally (default)
-tilt up -- --services=app1,app2,app3 --build_strategy=local
+# Simply specify which services to deploy - build methods are auto-detected
+tilt up -- --services=spring-service,python-app,database
 
-# Use ECR for all services
-tilt up -- --services=app1,app2,app3 --build_strategy=ecr
-
-# Mixed strategy - specify which to build locally
-tilt up -- --services=app1,app2,app3 --build_strategy=mixed --build_local=app1,app2
-
-# Override strategy for specific development workflow
-tilt up -- --services=app1,app2,database --build_strategy=mixed --build_local=app1
+# Services automatically use the right build method based on their configuration:
+# - spring-service: Command build (has build_command field)
+# - python-app: Dockerfile build (has build_context field)  
+# - database: External image (has type: external + image field)
 ```
 
 #### Implementation Details
 
-- Build strategy is determined during service deployment
+- Build method is automatically determined during service deployment
 - Local builds include comprehensive live update rules
 - ECR builds include authentication and caching
-- Strategy conflicts are detected and reported
+- No manual build strategy configuration required
 
 ### 4. Service-Specific Environment Variable Management
 
@@ -166,8 +164,6 @@ tilt up -- --services=app1,app2 --env_overrides=app1:LOG_LEVEL=DEBUG,app2:ENVIRO
 
 # Mix with other customizations
 tilt up -- --services=app1,app2 \
-           --build_strategy=mixed \
-           --build_local=app1 \
            --ecr_versions=app2:v1.2.3 \
            --env_overrides=app1:LOG_LEVEL=DEBUG,app2:CACHE_SIZE=2000
 ```
@@ -261,29 +257,24 @@ environments:
   minimal:
     description: "Essential services only for lightweight development"
     services: ["ai-agentic-test-app"]
-    build_strategy: "local"
 
   # Backend development with databases
   backend-only:
     description: "Backend APIs and databases without frontend components"
     services: ["ai-agentic-test-app", "database", "redis"]
-    build_strategy: "mixed"
 
   # Complete development environment
   full-stack:
     description: "Complete environment with all frontend, backend, and data services"
     services: ["ai-agentic-test-app", "database", "redis", "frontend"]
-    build_strategy: "mixed"
 
   # Custom user environments
   my-demo-setup:
     description: "Custom demo environment"
     services: ["ai-agentic-test-app", "redis"]
-    build_strategy: "local"
 
 # Global environment settings
 global:
-  default_build_strategy: "local"
   allowed_build_strategies: ["local", "ecr", "mixed"]
 ```
 
@@ -296,7 +287,6 @@ Team-wide Tilt settings and defaults:
   "team_settings": {
     "default_developer_namespace_prefix": "dev-",
     "default_cluster_type": "docker-desktop", 
-    "default_build_strategy": "local"
   }
 }
 ```
@@ -342,10 +332,8 @@ Comprehensive guide for service selection and customization.
 ### Complex Deployment Scenarios
 
 ```bash
-# Development scenario: Local build for main app, ECR for dependencies
+# Development scenario: Mix different services with custom configurations
 tilt up -- --services=app1,app2,database,redis,mock-api \
-           --build_strategy=mixed \
-           --build_local=app1 \
            --ecr_versions=app2:develop \
            --env_overrides=app1:LOG_LEVEL=DEBUG,app1:ENVIRONMENT=dev \
            --disable_services=mock-api
@@ -355,9 +343,8 @@ tilt up -- --services=app1,app2,database \
            --ecr_versions=app1:v1.2.3,app2:v2.0.0 \
            --env_overrides=app1:ENVIRONMENT=test,app2:ENVIRONMENT=test
 
-# Performance testing: All ECR with production-like settings
+# Performance testing: Use production-like settings
 tilt up -- --services=app1,app2,app3,database,redis \
-           --build_strategy=ecr \
            --env_overrides=app1:LOG_LEVEL=WARN,app2:LOG_LEVEL=WARN,app3:LOG_LEVEL=WARN
 ```
 
@@ -369,13 +356,11 @@ The customization system can be integrated with CI/CD pipelines:
 # Use in CI for integration testing
 tilt up -- --services=$SERVICES_TO_TEST \
            --ecr_versions=$ECR_VERSIONS \
-           --env_overrides=$TEST_ENV_OVERRIDES \
-           --build_strategy=ecr
+           --env_overrides=$TEST_ENV_OVERRIDES
 
 # Use in development automation
 tilt up -- --services=$(cat .dev-services) \
-           --build_strategy=mixed \
-           --build_local=$(git diff --name-only HEAD~1 | grep -o '^[^/]*' | sort -u | tr '\n' ',')
+           --ecr_versions=$DYNAMIC_ECR_VERSIONS
 ```
 
 ## Troubleshooting
@@ -425,7 +410,7 @@ Applies runtime customizations to a service configuration.
 
 **Returns:** Customized service configuration
 
-#### `get_effective_build_strategy(service_name, service_config, tilt_config)`
+#### `get_effective_build_method(service_name, service_config)`
 
 Determines the effective build strategy for a service.
 
@@ -442,7 +427,7 @@ Determines the effective build strategy for a service.
 
 Creates the main customization dashboard.
 
-#### `create_build_strategy_dashboard(services_info, tilt_config)`
+#### `create_build_method_dashboard(services_info)`
 
 Creates the build strategy dashboard.
 

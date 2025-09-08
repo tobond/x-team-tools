@@ -341,8 +341,8 @@ docker-compose build myservice && docker tag myproject_myservice myservice:lates
 # Deploy specific services with dependency resolution
 tilt up -- --services=database,redis,ai-agentic-mdr-oscar
 
-# Deploy with local builds
-tilt up -- --services=ai-agentic-mdr-oscar --build_local=ai-agentic-mdr-oscar
+# Deploy specific services (build method determined automatically)
+tilt up -- --services=ai-agentic-mdr-oscar
 
 # Deploy with debug mode
 tilt up -- --services=database,ai-agentic-mdr-oscar --enable_debug=true

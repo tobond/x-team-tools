@@ -7,88 +7,46 @@ Handles complete service deployment with k8s resources, monitoring, and configur
 load('k8s_manifests.star', 'generate_k8s_manifests')
 load('config_secrets.star', 'create_service_configmap', 'create_service_secret')
 load('builds.star', 'setup_build_strategy', 'validate_build_requirements', 'get_build_info', 'optimize_docker_build_context')
-load('config.star', 'apply_service_customizations', 'get_effective_build_strategy')
+load('config.star', 'apply_service_customizations')
 load('error_handling.star', 'handle_service_deployment_error')
 
 def generate_unique_port_forwards(service_name, ports):
-    """Generate unique local port forwards for a service to avoid conflicts
+    """Generate port forwards using exactly the ports specified by developer configuration
     
-    Uses a smart port allocation strategy:
-    1. Try to preserve the original port first (most developer-friendly)
-    2. Use standard ports for well-known services (5432 for postgres, 6379 for redis, etc.)
-    3. Only use hash-based port generation if there would be conflicts
-    4. Sequential allocation for services with multiple ports
+    No dynamic allocation, no hashing - simply use the ports as configured by the developer.
     """
     if not ports:
         return []
     
-    # Standard service ports that are commonly expected
-    standard_ports = {
-        5432: 5432,  # PostgreSQL
-        6379: 6379,  # Redis
-        3306: 3306,  # MySQL
-        27017: 27017,  # MongoDB
-        9200: 9200,  # Elasticsearch
-    }
-    
-    # Keep track of ports we've allocated to avoid conflicts within this service
-    allocated_ports = set()
     port_forwards = []
-    
-    for i, container_port in enumerate(ports):
-        local_port = 0  # Initialize with a default value
-        
-        # Strategy 1: Use standard port mapping if it's a well-known service port
-        if i == 0 and container_port in standard_ports:
-            local_port = standard_ports[container_port]
-        # Strategy 2: Try to use the original port if it's not already taken
-        elif container_port not in allocated_ports:
-            # Skip standard ports reserved for other services (unless this service is using that standard port)
-            if container_port not in standard_ports.values() or container_port in standard_ports:
-                local_port = container_port
-        
-        # Strategy 3: Generate a deterministic alternative port if there's a conflict
-        if local_port == 0:
-            # Generate deterministic but unique port based on service name and port number
-            # Base range: 8000-9999 for application services
-            hash_input = service_name + str(container_port) + str(i)
-            port_hash = abs(hash(hash_input)) % 2000  # 0-1999
-            local_port = 8000 + port_hash
-            
-            # Avoid conflicts with standard ports and already allocated ports
-            while local_port in standard_ports.values() or local_port in allocated_ports:
-                local_port = local_port + 1 if local_port < 9999 else 8000
-        
-        allocated_ports.add(local_port)
-        port_forwards.append("{}:{}".format(local_port, container_port))
+    for container_port in ports:
+        # Use the exact port specified by the developer configuration
+        port_forwards.append("{}:{}".format(container_port, container_port))
     
     return port_forwards
 
-def deploy_service(service_name, service_config, namespace, global_config, build_local_services, developer_id, debug_mode=False, tilt_config=None):
-    """Deploy a service using Tilt best practices"""
+def deploy_service(service_name, service_config, namespace, global_config, developer_id, debug_mode=False, tilt_config=None):
+    """Deploy a service using Tilt best practices with automatic build detection"""
 
     if tilt_config:
         service_config = apply_service_customizations(service_name, service_config, tilt_config)
-        build_strategy = get_effective_build_strategy(service_name, service_config, tilt_config)
-        build_locally = build_strategy == "local"
-    else:
-        build_locally = service_name in build_local_services
 
     app_type = service_config.get("type", "generic")
 
     if debug_mode:
         print("🚀 Deploying service: " + service_name)
 
-    validate_build_requirements(service_name, service_config, build_locally)
+    validate_build_requirements(service_name, service_config, debug_mode)
 
-    if build_locally:
+    # Use auto-detection for build optimization
+    if service_config.get("build_context") or service_config.get("build_command"):
         optimize_docker_build_context(".", app_type)
 
-    build_info = get_build_info(service_name, service_config, build_local_services)
+    build_info = get_build_info(service_name, service_config)
     create_service_configmap(service_name, service_config, namespace, debug_mode)
     create_service_secret(service_name, service_config, namespace, debug_mode)
 
-    build_result = setup_build_strategy(service_name, service_config, build_local_services, debug_mode)
+    build_result = setup_build_strategy(service_name, service_config, debug_mode)
     image_name = build_result["image_name"]
 
     manifests = generate_k8s_manifests(
@@ -111,11 +69,11 @@ def deploy_service(service_name, service_config, namespace, global_config, build
         "type": service_config.get("type", "generic"),
         "ports": service_config.get("ports", []),
         "image": image_name,
-        "build_locally": build_result["build_locally"]
+        "build_locally": build_result.get("build_locally", True)
     }
 
-def deploy_services_orchestrated(services_to_deploy, service_configs, namespace, global_config, build_local_services, developer_id, debug_mode=False, tilt_config=None):
-    """Deploy multiple services"""
+def deploy_services_orchestrated(services_to_deploy, service_configs, namespace, global_config, developer_id, debug_mode=False, tilt_config=None):
+    """Deploy multiple services using automatic build detection"""
     deployed_services = []
 
     for service_name in services_to_deploy:
@@ -123,7 +81,7 @@ def deploy_services_orchestrated(services_to_deploy, service_configs, namespace,
             service_config = service_configs['services'][service_name]
             deployment_result = deploy_service(
                 service_name, service_config, namespace, global_config,
-                build_local_services, developer_id, debug_mode, tilt_config
+                developer_id, debug_mode, tilt_config
             )
             deployed_services.append(deployment_result)
 

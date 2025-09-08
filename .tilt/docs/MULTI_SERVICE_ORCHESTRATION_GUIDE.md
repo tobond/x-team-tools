@@ -50,8 +50,8 @@ api-gateway:
 # Deploy specific services
 tilt up -- --services=database,redis,ai-agentic-mdr-oscar
 
-# Build services locally
-tilt up -- --services=ai-agentic-mdr-oscar --build_local=ai-agentic-mdr-oscar
+# Deploy specific services (build method determined automatically)
+tilt up -- --services=ai-agentic-mdr-oscar
 
 # Enable debug mode
 tilt up -- --services=database,ai-agentic-mdr-oscar --enable_debug=true
@@ -163,9 +163,9 @@ graph TD
 - Failure recovery resources per service
 
 ### Requirement 5.1: Service Selection
-✅ **IMPLEMENTED**: Developer can select which services to build locally
-- `--build_local` flag for local build selection
-- ECR image fallback for non-local services
+✅ **IMPLEMENTED**: Developer can select which services to deploy
+- Service selection via `--services` flag
+- Automatic build method detection based on service configuration
 - Per-developer configuration support
 
 ### Requirement 5.4: Configuration Independence
@@ -185,8 +185,8 @@ tilt up -- --services=database,redis
 # Deploy application services with dependencies
 tilt up -- --services=database,redis,user-service,api-gateway
 
-# Deploy all services with some built locally
-tilt up -- --services=database,redis,user-service,api-gateway --build_local=user-service
+# Deploy all services (build methods determined automatically)
+tilt up -- --services=database,redis,user-service,api-gateway
 ```
 
 ### Advanced Orchestration

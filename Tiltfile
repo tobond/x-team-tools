@@ -40,14 +40,12 @@ def main():
     developer_id = tilt_config["developer_id"]
     services_to_deploy = tilt_config["services_to_deploy"]
     debug_mode = tilt_config["debug_mode"]
-    build_local_services = tilt_config["build_local_services"]
     cluster_type = tilt_config["cluster_type"]
     
     if debug_mode:
         print("🐛 Debug mode enabled")
         print("Developer ID: " + developer_id)
         print("Services to deploy: " + str(services_to_deploy))
-        print("Build locally: " + str(build_local_services))
         print("Cluster type: " + cluster_type)
     
     # 2. Validate cluster safety and setup monitoring
@@ -85,7 +83,6 @@ def main():
         service_configs,
         namespace,
         global_config,
-        build_local_services,
         developer_id,
         debug_mode,
         tilt_config

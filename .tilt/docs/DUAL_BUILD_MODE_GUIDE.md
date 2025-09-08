@@ -1,27 +1,48 @@
-# Dual-Mode Build System Guide
+# Automatic Build Method Detection Guide
 
 ## Overview
 
-The x-team-tools Tilt environment now supports **two modes** for building Docker images:
+The x-team-tools Tilt environment automatically detects the appropriate build method for each service based on the configuration in `.tilt/service-config.yaml`. No command-line arguments or manual build strategy selection is required.
 
-1. **Dockerfile Mode** (Traditional): Uses `docker_build()` with a Dockerfile
-2. **Command Mode** (New): Uses `custom_build()` with any build command (Maven, Gradle, etc.)
+## Automatic Detection Logic
 
-## When to Use Each Mode
+The system automatically determines the build method based on service configuration fields:
 
-### Dockerfile Mode
-- **Best for**: Python, Node.js, Go applications with custom build requirements
-- **Advantages**: Full Docker control, custom base images, complex multi-stage builds
-- **Use when**: You need custom Docker layers, specific Linux packages, or complex build processes
+1. **External Services** (services with `type: "external"` + `image` field) → External image
+2. **ECR Services** (services with `ecr_image` field) → ECR build  
+3. **Command Builds** (services with `build_command` field) → Command build
+4. **Dockerfile Builds** (services with `build_context` field) → Dockerfile build
 
-### Command Mode  
-- **Best for**: Maven, Gradle, Bazel projects with built-in image generation
-- **Advantages**: Leverages existing build toolchain, consistent with CI/CD pipeline
-- **Use when**: Your build tool already generates Docker images (Spring Boot, etc.)
+## Build Method Examples
 
-## Configuration Examples
+### External Services (Databases, Cache, etc.)
 
-### Maven Spring Boot (Command Mode)
+```yaml
+services:
+  database:
+    type: "external"
+    image: "postgres:16.4"
+    ports: [5432]
+    env_vars:
+      - name: "POSTGRES_PASSWORD"
+        value: "testpass"
+```
+
+**Detection**: Framework detects `type: "external"` + `image` field → Uses external image directly.
+
+### ECR Pre-built Images
+
+```yaml
+services:
+  stable-service:
+    type: "python"
+    ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/stable-service:v1.2.3"
+    ports: [8080]
+```
+
+**Detection**: Framework detects `ecr_image` field → Pulls from ECR registry.
+
+### Command-Based Builds (Maven, Gradle, etc.)
 
 ```yaml
 services:
@@ -30,28 +51,11 @@ services:
     build_command: "mvn spring-boot:build-image -Dspring-boot.build-image.imageName=payment-service:latest"
     build_working_dir: "./services/payment-service"
     ports: [8080]
-    env_vars:
-      - name: "SPRING_PROFILES_ACTIVE"
-        value: "local"
 ```
 
-**Usage:**
-```bash
-tilt up payment-service -- --developer_id=$(whoami) --build_local=payment-service
-```
+**Detection**: Framework detects `build_command` field → Uses custom build command.
 
-### Gradle (Command Mode)
-
-```yaml
-services:
-  order-service:
-    type: "java" 
-    build_command: "gradle bootBuildImage --imageName=order-service:latest"
-    build_working_dir: "./services/order-service"
-    ports: [9090]
-```
-
-### Python API (Dockerfile Mode)
+### Dockerfile-Based Builds
 
 ```yaml
 services:
@@ -62,62 +66,67 @@ services:
     ports: [8001]
 ```
 
-## Build Mode Selection Logic
+**Detection**: Framework detects `build_context` + `dockerfile` fields → Uses traditional Docker build.
 
-The system automatically selects the build mode based on your configuration:
+## Build Method Benefits
 
-1. **Command Mode**: If `build_command` is specified
-2. **Dockerfile Mode**: If `dockerfile` + `build_context` are specified  
-3. **ECR Mode**: If `ecr_image` is specified
-4. **External Mode**: If `image` is specified (external services)
+### External Images
+- ✅ **Fastest**: No build time required
+- ✅ **Reliable**: Uses stable, tested images
+- ✅ **Consistent**: Same image across all environments
+- Use for: Databases, caches, message queues, stable services
 
-## Common Build Commands
+### ECR Images  
+- ✅ **Fast**: Pre-built images from registry
+- ✅ **Consistent**: Same build process as CI/CD
+- ✅ **Stable**: Production-tested images
+- Use for: Stable services, dependencies, integration testing
 
-### Maven Commands
+### Command Builds
+- ✅ **Tool Integration**: Leverages existing build toolchain
+- ✅ **Cached**: Uses existing build caches (Maven ~/.m2, Gradle ~/.gradle)
+- ✅ **Consistent**: Same process as local development
+- Use for: Maven, Gradle, Bazel projects with built-in image generation
 
-```bash
-# Basic build
-mvn spring-boot:build-image
+### Dockerfile Builds
+- ✅ **Flexible**: Complete control over build environment
+- ✅ **Customizable**: Custom base images, multi-stage builds
+- ✅ **Live Updates**: Supports fast development cycles
+- Use for: Custom build requirements, Python, Node.js, Go applications
 
-# With custom image name
-mvn spring-boot:build-image -Dspring-boot.build-image.imageName=myservice:latest
+## Common Build Commands (Command Mode)
+
+### Maven Spring Boot
+```yaml
+build_command: "mvn spring-boot:build-image -Dspring-boot.build-image.imageName=myservice:latest"
 
 # With registry
-mvn spring-boot:build-image -Dspring-boot.build-image.imageName=registry.com/myservice:v1.0
+build_command: "mvn spring-boot:build-image -Dspring-boot.build-image.imageName=registry.com/myservice:v1.0"
 
 # Multi-module project
-mvn -pl submodule spring-boot:build-image -Dspring-boot.build-image.imageName=submodule:latest
+build_command: "mvn -pl submodule spring-boot:build-image -Dspring-boot.build-image.imageName=submodule:latest"
 ```
 
-### Gradle Commands
-
-```bash
-# Basic build
-gradle bootBuildImage
-
-# With custom image name  
-gradle bootBuildImage --imageName=myservice:latest
+### Gradle
+```yaml
+build_command: "gradle bootBuildImage --imageName=myservice:latest"
 
 # Multi-module
-gradle :submodule:bootBuildImage --imageName=submodule:latest
+build_command: "gradle :submodule:bootBuildImage --imageName=submodule:latest"
 ```
 
-### Other Build Tools
-
-```bash
+### Custom Build Tools
+```yaml
 # Bazel
-bazel run //path/to/service:push_image
+build_command: "bazel run //path/to/service:push_image"
 
 # Custom script
-./build.sh myservice:latest
-
-# Docker Compose
-docker-compose build myservice && docker tag myproject_myservice myservice:latest
+build_command: "./build.sh myservice:latest"
 ```
 
 ## Live Updates
 
-Both modes support live updates with language-specific optimizations:
+All build methods support live updates when appropriate:
 
 ### Command Mode Live Updates
 - **Java**: Source files, Maven/Gradle configs, resources
@@ -126,130 +135,13 @@ Both modes support live updates with language-specific optimizations:
 - **Node.js**: Source files, package.json
 
 ### Dockerfile Mode Live Updates
-- Uses the same language-specific patterns
+- Uses language-specific patterns automatically
 - More granular control over file sync patterns
 
-## Monitoring & Debugging
+## Service Configuration Examples
 
-### Build Strategy Dashboard
-```bash
-tilt trigger build-strategy-dashboard
-```
-
-Shows:
-- Total services by build mode
-- Dockerfile builds vs Command builds
-- Build command details for each service
-
-### Build Monitoring
-```bash
-tilt trigger tilt-build-monitor
-```
-
-Shows:
-- Build status for each service
-- Live update status
-- Build logs and failures
-
-## Migration Guide
-
-### From Dockerfile to Command Mode
-
-**Before (Dockerfile):**
-```yaml
-payment-service:
-  type: "java"
-  build_context: "./services/payment-service" 
-  dockerfile: "./services/payment-service/Dockerfile"
-```
-
-**After (Command):**
-```yaml
-payment-service:
-  type: "java"
-  build_command: "mvn spring-boot:build-image -Dspring-boot.build-image.imageName=payment-service:latest"
-  build_working_dir: "./services/payment-service"
-```
-
-### From Command to Dockerfile Mode
-
-**Before (Command):**
-```yaml
-python-api:
-  type: "python"
-  build_command: "./build.sh python-api:latest"
-  build_working_dir: "./services/python-api"
-```
-
-**After (Dockerfile):**
-```yaml
-python-api:
-  type: "python"
-  build_context: "./services/python-api"
-  dockerfile: "./services/python-api/Dockerfile"
-```
-
-## Best Practices
-
-### Command Mode Best Practices
-1. **Image Naming**: Always specify explicit image names in build commands
-2. **Working Directory**: Set `build_working_dir` to the correct project root
-3. **Build Tool Versions**: Pin build tool versions in your project files
-4. **Registry Support**: Use full registry URLs for team deployments
-
-### Dockerfile Mode Best Practices  
-1. **Multi-stage Builds**: Use multi-stage builds for smaller images
-2. **Layer Caching**: Structure Dockerfiles for optimal layer caching
-3. **Security**: Use non-root users and minimal base images
-4. **Build Context**: Keep build contexts minimal with `.dockerignore`
-
-## Troubleshooting
-
-### Command Build Issues
-
-**Problem**: Build command not found
-```
-Solution: Ensure build tool is installed in working directory
-Check: ls -la ./services/your-service/pom.xml (for Maven)
-```
-
-**Problem**: Image name not recognized
-```
-Solution: Verify image name matches exactly in build_command
-Check: docker images | grep your-service-name
-```
-
-### Dockerfile Build Issues
-
-**Problem**: Dockerfile not found
-```
-Solution: Check dockerfile path is correct
-Verify: ls -la ./services/your-service/Dockerfile
-```
-
-**Problem**: Build context issues
-```
-Solution: Verify build_context directory exists
-Check: ls -la ./services/your-service/
-```
-
-## Performance Considerations
-
-### Command Mode Performance
-- ✅ **Faster**: Leverages existing build caches (Maven ~/.m2, Gradle ~/.gradle)
-- ✅ **Consistent**: Same build process as CI/CD
-- ⚠️ **Dependencies**: Requires build tools installed locally
-
-### Dockerfile Mode Performance  
-- ✅ **Flexible**: Complete control over build environment
-- ✅ **Isolated**: No local tool dependencies
-- ⚠️ **Cache Management**: Docker layer caching needs optimization
-
-## Advanced Configuration
-
-### Mixed Build Environments
-
-You can use both modes in the same project:
+### Mixed Environment
+You can use different build methods in the same project:
 
 ```yaml
 services:
@@ -265,29 +157,116 @@ services:
     build_context: "./services/notification-api"
     dockerfile: "./services/notification-api/Dockerfile"
     
+  # ECR pre-built service
+  stable-service:
+    type: "go"
+    ecr_image: "123456789.dkr.ecr.us-east-1.amazonaws.com/stable-service:v2.1.0"
+    
   # External service
   database:
     type: "external"
     image: "postgres:16.4"
 ```
 
-### Custom Build Commands
+## Usage
 
-```yaml
-services:
-  custom-service:
-    type: "generic"
-    build_command: |
-      ./scripts/custom-build.sh --service=custom-service --tag=latest --registry=local
-    build_working_dir: "./"
-    ports: [8080]
+Simply deploy services - the framework handles build method detection automatically:
+
+```bash
+# Deploy specific services (build methods detected automatically)
+tilt up -- --services=payment-api,notification-api,database --developer_id=$(whoami)
+
+# All services - framework chooses appropriate build method for each
+tilt up -- --services=payment-api,notification-api,stable-service,database
 ```
+
+## Migration from Manual Build Strategy
+
+### Before (Manual Strategy Selection)
+```bash
+# Old approach with manual flags (no longer needed)
+tilt up -- --services=app1,app2 --build_local=app1 --build_strategy=mixed
+```
+
+### After (Automatic Detection)
+```bash
+# New approach - no build flags needed
+tilt up -- --services=app1,app2 --developer_id=$(whoami)
+```
+
+The build method is determined by service configuration, not command-line arguments.
+
+## Troubleshooting
+
+### Wrong Build Method Detected
+**Problem**: Service uses unexpected build method
+```
+Solution: Check service configuration fields:
+- Remove conflicting fields (e.g., both ecr_image and build_context)
+- Ensure required fields are present for desired build method
+```
+
+### Build Command Not Working
+**Problem**: Command build fails
+```
+Solution: 
+- Verify build command syntax
+- Check build_working_dir path
+- Ensure build tools are available in working directory
+```
+
+### ECR Image Not Found
+**Problem**: ECR image pull fails
+```
+Solution:
+- Verify ECR image name and tag
+- Check AWS credentials and permissions
+- Ensure image exists in specified registry
+```
+
+## Best Practices
+
+### 1. Clear Service Configuration
+```yaml
+# Good: Clear single build method
+my-service:
+  type: "python"
+  build_context: "./my-service"
+  dockerfile: "./my-service/Dockerfile"
+
+# Avoid: Conflicting build configurations
+# Don't specify both ecr_image and build_context
+```
+
+### 2. Appropriate Build Method Selection
+- **External**: For databases, caches, third-party services
+- **ECR**: For stable, production-tested services
+- **Command**: For Maven/Gradle projects with built-in image generation
+- **Dockerfile**: For custom builds, active development
+
+### 3. Environment-Specific Configuration
+Use environment files to override build methods when needed:
+```yaml
+# .tilt/environments/production-test.yaml
+services:
+  my-service:
+    ecr_image: "registry/my-service:production-v1.2.3"  # Override for prod testing
+```
+
+## Performance Considerations
+
+- **External Images**: Fastest startup, no build time
+- **ECR Images**: Fast startup, network dependency
+- **Command Builds**: Variable speed, depends on build tool and cache
+- **Dockerfile Builds**: Moderate speed, Docker layer caching helps
+
+The automatic detection system chooses the most appropriate method based on your configuration, ensuring optimal performance for each service type.
 
 ## Getting Help
 
-- **Tilt UI**: http://localhost:10350 - View build logs and status
-- **Build Strategy Dashboard**: `tilt trigger build-strategy-dashboard`
-- **Build Monitor**: `tilt trigger tilt-build-monitor`
-- **Documentation**: `.tilt/docs/K8S_MANIFEST_GENERATION_GUIDE.md`
+- **Service Configuration**: Check `.tilt/service-config.yaml` syntax
+- **Build Issues**: Review Tilt UI logs for specific build method
+- **Tilt UI**: [http://localhost:10350](http://localhost:10350) - Real-time build status
+- **Documentation**: See related guides for specific build methods
 
-The dual-mode build system provides the flexibility to use the best build approach for each service while maintaining consistent deployment and monitoring capabilities.
+The automatic build method detection simplifies development by removing manual build strategy decisions while maintaining flexibility through configuration.
