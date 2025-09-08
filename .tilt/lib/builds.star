@@ -90,6 +90,80 @@ def setup_watch_settings():
 # Initialize watch settings
 setup_watch_settings()
 
+def get_live_updates_for_command_build(app_type, build_working_dir):
+    """Return optimized live update rules for command-based builds (Maven/Gradle/etc)"""
+    
+    if app_type == "java":
+        return [
+            # ALL SYNC STEPS FIRST
+            # For Maven/Gradle, sync source files to trigger rebuilds
+            sync(build_working_dir + '/src', '/app/src'),
+            sync(build_working_dir + '/target/classes', '/app/classes'),
+            
+            # Handle build files that trigger rebuild
+            sync(build_working_dir + '/pom.xml', '/app/pom.xml'),
+            sync(build_working_dir + '/build.gradle', '/app/build.gradle'),
+            sync(build_working_dir + '/gradle.properties', '/app/gradle.properties'),
+            
+            # Configuration files
+            sync(build_working_dir + '/src/main/resources', '/app/resources'),
+            
+            # ALL RUN STEPS AFTER SYNC STEPS
+            # Trigger rebuild when source or build files change
+            run('echo "Source changed, triggering rebuild via build command"', trigger=[
+                build_working_dir + '/src/**/*.java',
+                build_working_dir + '/pom.xml',
+                build_working_dir + '/build.gradle'
+            ]),
+            
+            run('touch ' + RESTART_FILE, trigger=[])
+        ]
+    elif app_type == "python":
+        return [
+            # ALL SYNC STEPS FIRST
+            sync(build_working_dir + '/src', '/app/src'),
+            sync(build_working_dir + '/*.py', '/app/'),
+            sync(build_working_dir + '/requirements.txt', '/app/requirements.txt'),
+            
+            # ALL RUN STEPS AFTER SYNC STEPS
+            run('pip install -r requirements.txt', trigger=[build_working_dir + '/requirements.txt']),
+            run('touch ' + RESTART_FILE, trigger=[])
+        ]
+    elif app_type == "go":
+        return [
+            # ALL SYNC STEPS FIRST
+            sync(build_working_dir + '/cmd', '/app/cmd'),
+            sync(build_working_dir + '/pkg', '/app/pkg'),
+            sync(build_working_dir + '/go.mod', '/app/go.mod'),
+            sync(build_working_dir + '/go.sum', '/app/go.sum'),
+            
+            # ALL RUN STEPS AFTER SYNC STEPS
+            run('go mod download', trigger=[build_working_dir + '/go.mod']),
+            run('touch ' + RESTART_FILE, trigger=[])
+        ]
+    elif app_type == "nodejs":
+        return [
+            # ALL SYNC STEPS FIRST
+            sync(build_working_dir + '/src', '/app/src'),
+            sync(build_working_dir + '/package.json', '/app/package.json'),
+            sync(build_working_dir + '/package-lock.json', '/app/package-lock.json'),
+            
+            # ALL RUN STEPS AFTER SYNC STEPS
+            run('npm install', trigger=[build_working_dir + '/package.json']),
+            run('touch ' + RESTART_FILE, trigger=[])
+        ]
+    else:
+        # Generic fallback for command builds
+        return [
+            # ALL SYNC STEPS FIRST
+            sync(build_working_dir + '/src', '/app/src'),
+            sync(build_working_dir + '/config', '/app/config'),
+            
+            # RUN STEPS AFTER SYNC STEPS
+            run('echo "Files changed, may need rebuild"', trigger=[build_working_dir + '/src/**/*']),
+            run('touch ' + RESTART_FILE, trigger=[])
+        ]
+
 def get_live_updates_for_type(app_type, build_context):
     """Return optimized live update rules based on application type with comprehensive file watching and fallback rules"""
 
@@ -242,7 +316,7 @@ def get_live_updates_for_type(app_type, build_context):
         ]
 
 def setup_build_strategy(service_name, service_config, build_local_services, debug_mode=False):
-    """Setup build strategy (local Docker build, ECR, or external image) for a service"""
+    """Setup build strategy (local Docker build, command build, ECR, or external image) for a service"""
 
     # Check if this is an external service with a pre-built image
     service_type = service_config.get("type", "generic")
@@ -255,7 +329,12 @@ def setup_build_strategy(service_name, service_config, build_local_services, deb
     # Priority 2: Local builds (when explicitly requested)
     build_locally = service_name in build_local_services
     if build_locally:
-        return _setup_local_build(service_name, service_config, debug_mode)
+        # Check if command-based build is specified
+        build_command = service_config.get("build_command")
+        if build_command:
+            return _setup_command_build(service_name, service_config, debug_mode)
+        else:
+            return _setup_local_build(service_name, service_config, debug_mode)
 
     # Priority 3: ECR builds (fallback for non-external services)
     return _setup_ecr_build(service_name, service_config, debug_mode)
@@ -298,7 +377,36 @@ def _setup_local_build(service_name, service_config, debug_mode=False):
     return {
         "image_name": service_name,
         "build_locally": True,
-        "build_context": build_context
+        "build_context": build_context,
+        "build_mode": "dockerfile"
+    }
+
+def _setup_command_build(service_name, service_config, debug_mode=False):
+    """Setup command-based Docker build (e.g., Maven, Gradle, etc.)"""
+
+    build_command = service_config.get("build_command")
+    build_working_dir = service_config.get("build_working_dir", "./" + service_name)
+    app_type = service_config.get("type", "generic")
+
+    if debug_mode:
+        print("⚡ Setting up command-based build for: " + service_name)
+        print("   Build command: " + build_command)
+        print("   Working directory: " + build_working_dir)
+
+    # Use custom_build for command-based builds
+    custom_build(
+        service_name,
+        command=build_command,
+        deps=[build_working_dir],
+        live_update=get_live_updates_for_command_build(app_type, build_working_dir)
+    )
+
+    return {
+        "image_name": service_name,
+        "build_locally": True,
+        "build_context": build_working_dir,
+        "build_mode": "command",
+        "build_command": build_command
     }
 
 def _setup_ecr_build(service_name, service_config, debug_mode=False):
@@ -347,18 +455,42 @@ def validate_build_requirements(service_name, service_config, build_locally, deb
 
     # Handle local builds
     if build_locally:
-        build_context = service_config.get("build_context", "./" + service_name)
-        dockerfile_path = service_config.get("dockerfile", build_context + "/Dockerfile")
+        build_command = service_config.get("build_command")
+        
+        # Command-based build validation
+        if build_command:
+            if debug_mode:
+                print("   🔧 Command-based build detected: " + build_command)
+            
+            build_working_dir = service_config.get("build_working_dir", "./" + service_name)
+            
+            # Validate build command is not empty
+            if not build_command or len(build_command.strip()) == 0:
+                validation_results["errors"].append("Build command cannot be empty")
+                validation_results["valid"] = False
+            
+            # Check if working directory exists
+            if not str(local('test -d ' + build_working_dir + ' && echo "exists" || echo "missing"')).strip() == "exists":
+                validation_results["errors"].append("Build working directory not found: " + build_working_dir)
+                validation_results["valid"] = False
+            
+        # Dockerfile-based build validation
+        else:
+            if debug_mode:
+                print("   📄 Dockerfile-based build detected")
+                
+            build_context = service_config.get("build_context", "./" + service_name)
+            dockerfile_path = service_config.get("dockerfile", build_context + "/Dockerfile")
 
-        # Check if Dockerfile exists
-        if not str(local('test -f ' + dockerfile_path + ' && echo "exists" || echo "missing"')).strip() == "exists":
-            validation_results["errors"].append("Dockerfile not found: " + dockerfile_path)
-            validation_results["valid"] = False
+            # Check if Dockerfile exists
+            if not str(local('test -f ' + dockerfile_path + ' && echo "exists" || echo "missing"')).strip() == "exists":
+                validation_results["errors"].append("Dockerfile not found: " + dockerfile_path)
+                validation_results["valid"] = False
 
-        # Check if build context exists
-        if not str(local('test -d ' + build_context + ' && echo "exists" || echo "missing"')).strip() == "exists":
-            validation_results["errors"].append("Build context directory not found: " + build_context)
-            validation_results["valid"] = False
+            # Check if build context exists
+            if not str(local('test -d ' + build_context + ' && echo "exists" || echo "missing"')).strip() == "exists":
+                validation_results["errors"].append("Build context directory not found: " + build_context)
+                validation_results["valid"] = False
 
     # Handle ECR builds
     else:
@@ -483,12 +615,19 @@ echo "💡 Save files to trigger automatic updates"
 def create_build_strategy_dashboard(deployed_services, tilt_config):
     """Create build strategy dashboard resource"""
 
+    # Count different build types
+    dockerfile_builds = len([svc for svc in deployed_services if svc.get("build_mode") == "dockerfile"])
+    command_builds = len([svc for svc in deployed_services if svc.get("build_mode") == "command"])
+    local_builds = len([svc for svc in deployed_services if svc.get("build_locally", False)])
+    external_images = len([svc for svc in deployed_services if svc.get("external_image", False)])
+    ecr_images = len([svc for svc in deployed_services if not svc.get("build_locally", False) and not svc.get("external_image", False)])
+
     local_resource('build-strategy-dashboard',
         cmd="""
 echo "🏗️  Build Strategy Dashboard"
 echo "============================"
 echo "Total services: {}"
-echo "Local builds: {}"
+echo "Local builds: {} (Dockerfile: {}, Command: {})"
 echo "External images: {}"
 echo "ECR images: {}"
 echo ""
@@ -496,13 +635,16 @@ echo "Build configuration:"
 {}
 echo ""
 echo "💡 Configure build strategy in developer-config.yaml"
+echo "🔧 Command builds use: mvn spring-boot:build-image, gradle bootBuildImage, etc."
+echo "📄 Dockerfile builds use: traditional Dockerfile + docker_build()"
 """.format(
         len(deployed_services),
-        len([svc for svc in deployed_services if svc.get("build_locally", False)]),
-        len([svc for svc in deployed_services if svc.get("external_image", False)]),
-        len([svc for svc in deployed_services if not svc.get("build_locally", False) and not svc.get("external_image", False)]),
+        local_builds, dockerfile_builds, command_builds,
+        external_images, ecr_images,
         '\n'.join(['  - ' + svc["name"] + ': ' + (
-            'Local build' if svc.get("build_locally", False)
+            'Command build (' + svc.get("build_command", "").split()[0] + ')' if svc.get("build_mode") == "command"
+            else 'Dockerfile build' if svc.get("build_mode") == "dockerfile" 
+            else 'Local build' if svc.get("build_locally", False)
             else 'External image' if svc.get("external_image", False)
             else 'ECR image'
         ) for svc in deployed_services])

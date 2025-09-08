@@ -106,9 +106,18 @@ def setup_service_dependencies(services, service_configs):
 services:
   service-name:
     type: "python|java|go|nodejs|postgres|redis|generic"
+    
+    # BUILD MODE 1: Dockerfile-based (traditional)
     build_context: "./path/to/service"
     dockerfile: "./path/to/Dockerfile"
+    
+    # BUILD MODE 2: Command-based (for Maven/Gradle/etc)
+    build_command: "mvn spring-boot:build-image -Dspring-boot.build-image.imageName=myservice:latest"
+    build_working_dir: "./path/to/service"  # Working directory for build command
+    
+    # Alternative build configurations
     ecr_image: "registry/image:tag"
+    
     dependencies: ["service1", "service2"]
     ports: [8080, 8081]
     env_vars:
@@ -132,6 +141,110 @@ services:
       port: 8080
 ```
 
+### Build Mode Selection Logic
+1. **Command Mode**: If `build_command` is specified, use command-based build
+2. **Dockerfile Mode**: If `dockerfile` + `build_context` are specified, use traditional Docker build
+3. **ECR Mode**: If `ecr_image` is specified, use pre-built ECR image
+4. **External Mode**: If `image` is specified (for external services), use external image
+
+### Build Mode Examples
+
+#### Maven Spring Boot (Command Mode)
+```yaml
+services:
+  java-service:
+    type: "java"
+    build_command: "mvn spring-boot:build-image -Dspring-boot.build-image.imageName=java-service:latest"
+    build_working_dir: "./services/java-service"
+    ports: [8080]
+```
+
+#### Gradle (Command Mode)
+```yaml
+services:
+  gradle-service:
+    type: "java" 
+    build_command: "gradle bootBuildImage --imageName=gradle-service:latest"
+    build_working_dir: "./services/gradle-service"
+    ports: [8080]
+```
+
+#### Traditional Dockerfile (Dockerfile Mode)
+```yaml
+services:
+  python-service:
+    type: "python"
+    build_context: "./services/python-service"
+    dockerfile: "./services/python-service/Dockerfile"
+    ports: [8000]
+```
+
+### Advanced Command Build Examples
+
+#### Maven with Custom Image Name and Registry
+```yaml
+services:
+  spring-api:
+    type: "java"
+    build_command: "mvn spring-boot:build-image -Dspring-boot.build-image.imageName=myregistry.com/spring-api:latest"
+    build_working_dir: "./services/spring-api"
+    dependencies: ["database"]
+    ports: [8080, 8443]
+    env_vars:
+      - name: "SPRING_PROFILES_ACTIVE"
+        value: "local"
+```
+
+#### Gradle Multi-Module Project
+```yaml
+services:
+  gradle-microservice:
+    type: "java"
+    build_command: "gradle :microservice:bootBuildImage --imageName=gradle-microservice:local"
+    build_working_dir: "./services/gradle-project"
+    ports: [9090]
+    env_vars:
+      - name: "JAVA_OPTS"
+        value: "-Xmx1g -XX:+UseG1GC"
+```
+
+#### Custom Build Tool (e.g., Bazel, Pants)
+```yaml
+services:
+  bazel-service:
+    type: "java"
+    build_command: "bazel run //services/bazel-service:push_image"
+    build_working_dir: "./"
+    ports: [8080]
+```
+
+### Mixed Build Environments
+
+You can use both build modes in the same project:
+
+```yaml
+services:
+  # Command-based Java service
+  payment-service:
+    type: "java"
+    build_command: "mvn spring-boot:build-image -Dspring-boot.build-image.imageName=payment-service:latest"
+    build_working_dir: "./services/payment-service"
+    ports: [8080]
+    
+  # Dockerfile-based Python service  
+  notification-service:
+    type: "python"
+    build_context: "./services/notification-service"
+    dockerfile: "./services/notification-service/Dockerfile"
+    ports: [8001]
+    
+  # External service
+  database:
+    type: "external"
+    image: "postgres:16.4"
+    ports: [5432]
+```
+
 ### Global Configuration
 ```yaml
 global:
@@ -148,6 +261,53 @@ global:
     period_seconds: 5
     timeout_seconds: 3
     failure_threshold: 3
+```
+
+## Common Build Commands
+
+### Maven Spring Boot Build Commands
+```bash
+# Basic build with default image name
+mvn spring-boot:build-image
+
+# Custom image name and tag
+mvn spring-boot:build-image -Dspring-boot.build-image.imageName=myservice:latest
+
+# With registry prefix
+mvn spring-boot:build-image -Dspring-boot.build-image.imageName=myregistry.com/myservice:v1.0
+
+# With specific builder
+mvn spring-boot:build-image -Dspring-boot.build-image.builder=paketobuildpacks/builder:base
+
+# Multi-module project
+mvn -pl submodule spring-boot:build-image -Dspring-boot.build-image.imageName=submodule:latest
+```
+
+### Gradle Build Commands
+```bash
+# Basic Gradle build
+gradle bootBuildImage
+
+# With custom image name
+gradle bootBuildImage --imageName=myservice:latest
+
+# Multi-module project
+gradle :submodule:bootBuildImage --imageName=submodule:latest
+
+# With specific builder
+gradle bootBuildImage --builder=paketobuildpacks/builder:base --imageName=myservice:latest
+```
+
+### Other Build Tools
+```bash
+# Bazel
+bazel run //path/to/service:push_image
+
+# Docker Compose build and tag
+docker-compose build myservice && docker tag myproject_myservice myservice:latest
+
+# Custom script
+./build-scripts/build-service.sh myservice latest
 ```
 
 ## Usage Examples
