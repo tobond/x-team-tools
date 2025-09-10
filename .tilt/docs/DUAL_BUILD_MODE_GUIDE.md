@@ -184,8 +184,8 @@ tilt up -- --services=payment-api,notification-api,stable-service,database
 
 ### Before (Manual Strategy Selection)
 ```bash
-# Old approach with manual flags (no longer needed)
-tilt up -- --services=app1,app2 --build_local=app1 --build_strategy=mixed
+# Old approach required manual build configuration flags
+# These flags have been completely removed from the framework
 ```
 
 ### After (Automatic Detection)

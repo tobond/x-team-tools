@@ -40,8 +40,21 @@ if [ ! -f "Tiltfile" ] || [ ! -d ".tilt" ]; then
     exit 1
 fi
 
+# Load plugin bridge for enhanced environment information
+source "$(dirname "$0")/lib/plugin-bridge.sh"
+
 # Helper function to get available environments (needed early for usage)
 get_available_environments() {
+    # First try plugin system
+    if plugin_framework_available; then
+        local plugin_environments=$(get_available_environment_plugins)
+        if [ -n "$plugin_environments" ]; then
+            echo "$plugin_environments" | tr ' ' '\n' | sed 's/^/  /'
+            return
+        fi
+    fi
+    
+    # Fallback to legacy environments.yaml
     local env_file=".tilt/environments.yaml"
     
     if [ ! -f "$env_file" ]; then
@@ -117,16 +130,27 @@ if [ -z "$ENVIRONMENT" ]; then
     exit 1
 fi
 
-# Read environment configurations from user-defined file
+# Read environment configurations from plugins or user-defined file
 get_services_for_environment() {
     local env="$1"
+    
+    # First try plugin system
+    if plugin_framework_available; then
+        local plugin_services=$(get_services_for_environment_from_plugins "$env")
+        if [ $? -eq 0 ] && [ -n "$plugin_services" ]; then
+            echo "$plugin_services"
+            return
+        fi
+    fi
+    
+    # Fallback to legacy environments.yaml
     local env_file=".tilt/environments.yaml"
     
     if [ ! -f "$env_file" ]; then
         log_error "Environment configuration file not found: $env_file"
         echo ""
-        echo "Create $env_file to define your custom environments."
-        echo "See documentation for format and examples."
+        echo "Create $env_file to define your custom environments or use plugin-defined environments."
+        echo "Available plugin environments: $(get_available_environment_plugins | tr ' ' ',')"
         exit 1
     fi
     
@@ -200,10 +224,22 @@ get_build_strategy_for_environment() {
 
 get_description_for_environment() {
     local env="$1"
+    
+    # First try plugin system
+    if plugin_framework_available; then
+        local plugin_info=$(get_environment_info_from_plugins "$env")
+        if [ -n "$plugin_info" ]; then
+            # Extract just the description line (first line after environment name)
+            echo "$plugin_info" | head -1 | sed 's/^[^-]* - //'
+            return
+        fi
+    fi
+    
+    # Fallback to legacy environments.yaml
     local env_file=".tilt/environments.yaml"
     
     if [ ! -f "$env_file" ]; then
-        echo "Custom environment"
+        echo "Plugin-defined environment"
         return
     fi
     
@@ -238,7 +274,29 @@ DESCRIPTION=$(get_description_for_environment "$ENVIRONMENT")
 
 # Check if all required services are available
 log_step "Validating environment requirements..."
+
+# Show plugin framework status
+check_plugin_framework_status_extended
+echo ""
+
 available_services=$(grep -E "^  [a-zA-Z][a-zA-Z0-9-]*:" .tilt/service-config.yaml | sed 's/://g' | sed 's/^  //' | grep -v "^global$")
+
+# Use plugin-aware validation if available
+if plugin_framework_available; then
+    if validate_environment_with_plugins "$ENVIRONMENT" "$available_services"; then
+        log_success "Plugin validation passed"
+    else
+        log_warning "Plugin validation failed, continuing with legacy validation"
+    fi
+    
+    # Show plugin environment information
+    echo ""
+    echo -e "${BLUE}🌍 ENVIRONMENT INFORMATION${NC}"
+    get_environment_info_from_plugins "$ENVIRONMENT" | while read -r line; do
+        echo "  $line"
+    done
+    echo ""
+fi
 
 for service in $SERVICES; do
     if ! echo "$available_services" | grep -q "^$service$"; then

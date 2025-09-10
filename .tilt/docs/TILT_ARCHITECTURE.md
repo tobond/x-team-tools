@@ -32,18 +32,34 @@ This document describes the modular architecture of the Tilt development environ
 
 ```
 .tilt/
-├── lib/                          # Modular Starlark libraries (FRAMEWORK LAYER)
+├── framework/                   # Plugin Architecture Framework (FRAMEWORK LAYER)
+│   ├── core/
+│   │   ├── orchestration.star   # Service lifecycle management
+│   │   ├── plugin_discovery.star # Plugin registration and discovery
+│   │   └── legacy_bridge.star   # Bridge to existing lib/ modules
+│   ├── interfaces/
+│   │   ├── service.star         # Service plugin interface contract
+│   │   ├── build_strategy.star  # Build strategy interface
+│   │   └── environment.star     # Environment plugin interface
+│   ├── registry/
+│   │   ├── service_registry.star # Service plugin registration
+│   │   ├── build_registry.star  # Build strategy registration
+│   │   └── environment_registry.star # Environment registration
+│   └── validation/
+│       ├── config_validator.star # Generic configuration validation
+│       └── schema.star          # Configuration schemas
+├── plugins/                     # Configuration-Driven Plugins (IMPLEMENTATION LAYER)
+│   ├── services/
+│   │   └── yaml_config_reader.star # Universal service plugin (ALL types)
+│   ├── environments/
+│   │   └── yaml_environment_loader.star # Universal environment plugin (ALL envs)
+│   └── build_strategies/
+│       └── live_update.star     # Live update strategy
+├── lib/                         # Legacy Modular Libraries (transitioning)
 │   ├── config.star              # Configuration parsing and validation
 │   ├── cluster.star             # Cluster safety and environment detection
-│   ├── namespace.star           # Namespace management and isolation
-│   ├── k8s_manifests.star       # Kubernetes manifest generation
-│   ├── config_secrets.star      # ConfigMap and Secret management
-│   ├── dependencies.star        # Service dependency ordering
-│   ├── builds.star              # Build strategies and live updates
 │   ├── services.star            # Service deployment orchestration
-│   ├── monitoring.star          # Monitoring and validation resources
-│   ├── error_handling.star      # Error handling and recovery
-│   └── external_services.star   # Service-agnostic external service deployment
+│   └── [other lib modules...]   # Other framework modules
 ├── service-config.yaml          # Service definitions (PROJECT LAYER)
 ├── environments.yaml            # User-defined environments (PROJECT LAYER)
 └── developer-config.yaml       # Developer-specific settings (optional)
@@ -95,16 +111,22 @@ services:
 
 ### Framework-Project Separation
 
-The architecture now implements complete separation between the generic framework and project-specific configuration:
+The architecture implements complete separation between the generic framework and project-specific configuration:
 
 #### Framework Layer (Generic & Reusable)
-- `Tiltfile` - Generic orchestration logic
-- `.tilt/lib/*.star` - Service-agnostic modules
+- `Tiltfile` - Generic orchestration logic with plugin framework integration
+- `.tilt/framework/` - Plugin architecture framework (interfaces, registries, validation)
+- `.tilt/lib/*.star` - Legacy service-agnostic modules (transitioning)
 - `scripts/setup-environment.sh` - Generic environment setup
 
-#### Project Layer (User-Configurable)
-- `.tilt/service-config.yaml` - Project's services
-- `.tilt/environments.yaml` - User-defined environments
+#### Implementation Layer (Configuration-Driven Plugins)
+- `.tilt/plugins/services/yaml_config_reader.star` - Universal service plugin (ALL types)
+- `.tilt/plugins/environments/yaml_environment_loader.star` - Universal environment plugin (ALL envs)
+- `.tilt/plugins/build_strategies/` - Build strategy plugins
+
+#### Project Layer (User-Configurable - YAML Only)
+- `.tilt/service-config.yaml` - Defines ALL service types and configurations
+- `.tilt/environments.yaml` - Defines ALL environment combinations
 - `services/` directory - Imported service code
 
 ### Environment Configuration
@@ -129,9 +151,11 @@ environments:
 ### Benefits
 
 - **Complete Flexibility**: Users define any environment combinations
-- **No Framework Changes**: Adding services/environments requires no code changes
+- **Zero-Code Extensions**: Adding services/environments requires ONLY YAML edits
+- **Universal Plugin Architecture**: Two plugins handle ALL service and environment types
+- **Pure Configuration-Driven**: No hardcoded service logic anywhere in the implementation
 - **Reusable Framework**: Same framework works across different projects
-- **Clean Separation**: Framework concerns isolated from project specifics
+- **Clean Separation**: Framework concerns completely isolated from project specifics
 
 ## Service-Agnostic External Services System
 

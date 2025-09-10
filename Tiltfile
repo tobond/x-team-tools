@@ -15,6 +15,9 @@ load('ext://namespace', 'namespace_create')
 load('ext://configmap', 'configmap_create')
 load('ext://secret', 'secret_create_generic')
 
+# Load plugin framework (new architecture)
+load('.tilt/framework/init.star', 'initialize_plugin_framework', 'create_framework_dashboard')
+
 # Load ALL modular libraries at top level (required by Starlark)
 load('.tilt/lib/config.star', 'parse_tilt_config', 'load_service_config', 'validate_services', 'create_service_customization_dashboard', 'create_service_selection_guide')
 load('.tilt/lib/cluster.star', 'validate_cluster_safety', 'detect_cluster_environment', 'setup_cluster_monitoring')
@@ -28,6 +31,11 @@ load('.tilt/lib/external_services.star', 'deploy_external_services')
 
 def main():
     """Main Tiltfile execution flow with comprehensive error handling"""
+    
+    # 0. Initialize plugin framework (new architecture)
+    print("🔌 Initializing Plugin Framework...")
+    framework_init = initialize_plugin_framework()
+    create_framework_dashboard()
     
     # 1. Parse and validate configuration
     tilt_config = parse_tilt_config()

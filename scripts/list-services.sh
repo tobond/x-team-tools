@@ -20,8 +20,19 @@ if [ ! -f "Tiltfile" ] || [ ! -d ".tilt" ]; then
     exit 1
 fi
 
+# Load plugin bridge for enhanced service information
+source "$(dirname "$0")/lib/plugin-bridge.sh"
+
 echo -e "${CYAN}📦 X-TEAM-TOOLS SERVICE CATALOG${NC}"
 echo -e "${CYAN}================================${NC}"
+echo ""
+
+# Show plugin framework status
+check_plugin_framework_status
+echo ""
+
+# Show available service plugins
+list_service_plugins
 echo ""
 
 # Parse services from configuration

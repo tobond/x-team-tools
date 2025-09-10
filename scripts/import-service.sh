@@ -40,6 +40,9 @@ if [ ! -f "Tiltfile" ] || [ ! -d ".tilt" ]; then
     exit 1
 fi
 
+# Load plugin bridge for enhanced service detection
+source "$(dirname "$0")/lib/plugin-bridge.sh"
+
 # Parse arguments
 SERVICE_REPO=""
 SERVICE_NAME=""
@@ -218,22 +221,10 @@ esac
 # Auto-detect service configuration
 log_step "Auto-detecting service configuration..."
 
+# Use plugin-aware service type detection
 detect_service_type() {
     local service_dir="$1"
-    
-    if [ -f "$service_dir/requirements.txt" ] && [ -f "$service_dir/main.py" -o -f "$service_dir/app.py" ]; then
-        echo "python"
-    elif [ -f "$service_dir/package.json" ]; then
-        echo "node"
-    elif [ -f "$service_dir/pom.xml" ] || [ -f "$service_dir/build.gradle" ]; then
-        echo "java"
-    elif [ -f "$service_dir/go.mod" ]; then
-        echo "go"
-    elif [ -f "$service_dir/Dockerfile" ]; then
-        echo "docker"
-    else
-        echo "generic"
-    fi
+    detect_service_type_with_plugins "$service_dir"
 }
 
 detect_ports() {
@@ -253,15 +244,10 @@ detect_ports() {
         detected_ports=$(grep -E '"port":\s*\d+' "$service_dir/package.json" | head -1 | grep -oE '\d+' | head -1)
     fi
     
-    # Default ports by service type
+    # Default ports by service type using plugin information
     if [ -z "$detected_ports" ]; then
-        case "$(detect_service_type "$service_dir")" in
-            "python") detected_ports="8000" ;;
-            "node") detected_ports="3000" ;;
-            "java") detected_ports="8080" ;;
-            "go") detected_ports="8080" ;;
-            *) detected_ports="8080" ;;
-        esac
+        local service_type=$(detect_service_type "$service_dir")
+        detected_ports=$(get_default_port_for_service_type "$service_type")
     fi
     
     echo "$detected_ports"
@@ -273,6 +259,14 @@ SERVICE_PORT=$(detect_ports "$SERVICE_DIR")
 
 log_info "Detected service type: $SERVICE_TYPE"
 log_info "Detected port: $SERVICE_PORT"
+
+# Show detailed service information using plugin metadata
+echo ""
+log_info "Service Information:"
+get_service_info_from_plugins "$SERVICE_TYPE" | while read -r line; do
+    echo "  $line"
+done
+echo ""
 
 # Generate service configuration
 log_step "Adding service to configuration..."
@@ -292,29 +286,22 @@ else
     dockerfile: \"./services/$SERVICE_NAME/Dockerfile\""
 fi
 
-# Create service configuration
+# Show plugin framework status
+check_plugin_framework_status
+
+# Generate plugin-aware configuration
+log_info "Generating configuration using plugin defaults..."
+
+# Use plugin bridge to generate default configuration
 cat >> .tilt/service-config.yaml << EOF
 
   # $SERVICE_NAME (imported from $SERVICE_REPO)
-  $SERVICE_NAME:
-    type: "$SERVICE_TYPE"
-$BUILD_CONFIG
-    dependencies: []  # Add service dependencies here
-    ports: [$SERVICE_PORT]
-    env_vars:
-      - name: "LOG_LEVEL"
-        value: "DEBUG"
-      - name: "ENVIRONMENT"
-        value: "local"
-      - name: "PORT"
-        value: "$SERVICE_PORT"
-    resources:
-      cpu: "500m"
-      memory: "512Mi"
-    health_check:
-      path: "/health"
-      port: $SERVICE_PORT
+$(get_plugin_default_config "$SERVICE_TYPE" "$SERVICE_NAME")
 EOF
+
+# Validate the configuration using plugin validation
+log_info "Validating service configuration..."
+validate_service_config_with_plugins "$SERVICE_NAME" "$SERVICE_TYPE" ".tilt/service-config.yaml"
 
 log_success "Service '$SERVICE_NAME' imported successfully!"
 echo ""

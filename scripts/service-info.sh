@@ -20,6 +20,9 @@ if [ ! -f "Tiltfile" ] || [ ! -d ".tilt" ]; then
     exit 1
 fi
 
+# Load plugin bridge for enhanced service information
+source "$(dirname "$0")/lib/plugin-bridge.sh"
+
 # Parse arguments
 SERVICE_NAME="$1"
 
@@ -78,6 +81,13 @@ echo "  Type: $service_type"
 echo "  Ports: [$ports]"
 echo "  Build Context: $build_context"
 echo "  Dockerfile: $dockerfile"
+
+# Show plugin-specific information
+echo ""
+echo -e "${BLUE}🔌 PLUGIN INFORMATION${NC}"
+get_service_info_from_plugins "$service_type" | while read -r line; do
+    echo "  $line"
+done
 [ -n "$dependencies" ] && echo "  Dependencies: [$dependencies]"
 echo ""
 
