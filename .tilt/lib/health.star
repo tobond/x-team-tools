@@ -27,6 +27,7 @@ def _create_health_dashboard(deployed_services, namespace):
     
     local_resource(
         'health-dashboard',
+        labels=['monitoring'],
         cmd='''
         echo "=== COMPREHENSIVE HEALTH DASHBOARD ==="
         echo "Namespace: ''' + namespace + '''"
@@ -89,6 +90,7 @@ def _create_service_health_monitor(service_info, namespace, debug_mode):
     
     local_resource(
         service_name + '-health',
+        labels=['monitoring'],
         cmd=health_cmd,
         deps=[service_name],
         labels=['health', 'service:' + service_name, 'type:' + service_type],
@@ -164,6 +166,7 @@ def _create_startup_validation_monitors(deployed_services, namespace, debug_mode
     
     local_resource(
         'startup-validation',
+        labels=['monitoring'],
         cmd='''
         echo "=== STARTUP VALIDATION ==="
         echo "Validating service startup sequence..."
@@ -206,6 +209,7 @@ def _create_failure_recovery_resources(deployed_services, namespace, debug_mode)
         
         local_resource(
             service_name + '-recovery',
+            labels=['support'],
             cmd='''
             echo "=== RECOVERY ACTIONS: ''' + service_name + ''' ==="
             echo "Attempting to recover service..."
@@ -235,6 +239,7 @@ def _create_failure_recovery_resources(deployed_services, namespace, debug_mode)
     # Create global recovery resource
     local_resource(
         'global-recovery',
+        labels=['support'],
         cmd='''
         echo "=== GLOBAL RECOVERY ==="
         echo "Attempting to recover all services..."
@@ -269,6 +274,7 @@ def create_service_isolation_monitor(deployed_services, namespace, debug_mode):
     
     local_resource(
         'service-isolation-monitor',
+        labels=['monitoring'],
         cmd='''
         echo "=== SERVICE ISOLATION MONITOR ==="
         echo "Checking service independence and isolation..."

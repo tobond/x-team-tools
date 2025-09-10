@@ -117,6 +117,7 @@ def _create_dependency_monitoring_resources(deployment_order, dependency_graph, 
     # Main dependency overview
     local_resource(
         'dependency-overview',
+        labels=['development'],
         cmd='''
         echo "=== MULTI-SERVICE DEPENDENCY OVERVIEW ==="
         echo "Total Services: ''' + str(len(services)) + '''"
@@ -136,7 +137,6 @@ def _create_dependency_monitoring_resources(deployment_order, dependency_graph, 
         echo "✅ Deployment order calculated successfully"
         ''',
         deps=[],
-        labels=['infrastructure', 'dependencies', 'overview'],
         auto_init=True
     )
     
@@ -151,6 +151,7 @@ def _create_dependency_chain_resource(dependency_graph):
     
     local_resource(
         'dependency-chains',
+        labels=['development'],
         cmd='''
         echo "=== SERVICE DEPENDENCY CHAINS ==="
         ''' + '\n'.join([
@@ -165,7 +166,6 @@ def _create_dependency_chain_resource(dependency_graph):
         ]) + '''
         ''',
         deps=[],
-        labels=['infrastructure', 'dependencies', 'chains'],
         auto_init=True
     )
 
@@ -204,6 +204,7 @@ def _create_service_dependency_health_check(service, dependencies, debug_mode):
     
     local_resource(
         service + "-dependency-health",
+        labels=['monitoring'],
         cmd='''
         echo "=== Dependency Health Check: ''' + service + ''' ==="
         echo "Checking dependencies: ''' + ', '.join(dependencies) + '''"
@@ -227,7 +228,6 @@ def _create_service_dependency_health_check(service, dependencies, debug_mode):
         fi
         ''',
         deps=dependencies,
-        labels=['health-check', 'dependencies', 'service-' + service.replace('-', '_')],  # Fix invalid label format
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL
     )

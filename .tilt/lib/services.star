@@ -58,10 +58,18 @@ def deploy_service(service_name, service_config, namespace, global_config, devel
     # Generate unique port forwards to avoid local port conflicts
     port_forwards = generate_unique_port_forwards(service_name, service_config.get("ports", []))
     
+    # Determine appropriate labels based on service type
+    service_type = service_config.get("type", "generic")
+    service_labels = ["services"]
+    
+    # Add infrastructure label for external/database services
+    if service_type == "external" or service_name in ["database", "redis", "postgres", "mysql"]:
+        service_labels.append("infrastructure")
+    
     k8s_resource(
         service_name,
         port_forwards=port_forwards,
-        labels=[service_name]
+        labels=service_labels
     )
 
     return {
@@ -92,7 +100,7 @@ def create_deployment_summary(deployed_services, namespace, developer_id):
     local_resource(
         'deployment-summary',
         cmd='echo "Deployed {} services in namespace {}"'.format(len(deployed_services), namespace),
-        labels=['summary']
+        labels=['development']
     )
 
 def create_endpoint_dashboard(deployed_services, namespace):
@@ -101,7 +109,7 @@ def create_endpoint_dashboard(deployed_services, namespace):
         local_resource(
             'endpoint-dashboard',
             cmd='echo "Service endpoints available"',
-            labels=['endpoints']
+            labels=['development']
         )
 
 def create_port_mapping_dashboard(deployed_services):
@@ -140,5 +148,5 @@ Service -> localhost:local_port:container_port
     local_resource(
         'port-mapping-dashboard',
         cmd=mapping_cmd,
-        labels=['monitoring']
+        labels=['development']
     )

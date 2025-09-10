@@ -69,6 +69,7 @@ def _create_monitoring_dashboard(namespace, services_to_deploy):
         deps=services_to_deploy if services_to_deploy else [],
         auto_init=True,
         trigger_mode=TRIGGER_MODE_MANUAL,
+        labels=['dashboard', 'monitoring', 'overview']
     )
 
 def _setup_service_health_monitoring(namespace, services_to_deploy):
@@ -128,6 +129,7 @@ def _setup_service_health_monitoring(namespace, services_to_deploy):
         deps=services_to_deploy,
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
+        labels=['health', 'monitoring', 'services']
     )
 
 def _setup_resource_monitoring(namespace):
@@ -187,6 +189,7 @@ def _setup_resource_monitoring(namespace):
         deps=[],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
+        labels=['monitoring', 'resources', 'performance']
     )
 
 def _setup_validation_resources(namespace, services_to_deploy):
@@ -226,6 +229,7 @@ def _setup_validation_resources(namespace, services_to_deploy):
         deps=services_to_deploy if services_to_deploy else [],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
+        labels=['validation', 'k8s-resources']
     )
     
     # Manifest validation resource
@@ -257,6 +261,7 @@ def _setup_validation_resources(namespace, services_to_deploy):
         deps=services_to_deploy if services_to_deploy else [],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
+        labels=['validation', 'manifests']
     )
 
 def setup_safety_monitoring():
@@ -291,6 +296,7 @@ def setup_safety_monitoring():
         deps=[],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
+        labels=['safety', 'monitoring']
     )
 
 def setup_debugging_resources(namespace, services_to_deploy):
@@ -341,6 +347,7 @@ def setup_debugging_resources(namespace, services_to_deploy):
         deps=services_to_deploy if services_to_deploy else [],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
+        labels=['debugging', 'troubleshooting', 'diagnostics']
     )
     
     local_resource(
@@ -371,6 +378,7 @@ def setup_debugging_resources(namespace, services_to_deploy):
         deps=services_to_deploy if services_to_deploy else [],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
+        labels=['logs', 'debugging', 'aggregation']
     )
 
 def setup_service_dashboard(deployed_services, namespace):
@@ -454,6 +462,7 @@ def setup_service_dashboard(deployed_services, namespace):
         deps=[svc['name'] for svc in deployed_services],
         auto_init=True,
         trigger_mode=TRIGGER_MODE_MANUAL,
+        labels=['dashboard', 'services', 'overview']
     )
 
 def setup_cleanup_resources(namespace):
@@ -480,4 +489,5 @@ def setup_cleanup_resources(namespace):
         deps=[],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
+        labels=['cleanup', 'maintenance']
     )

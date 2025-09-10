@@ -245,6 +245,7 @@ def setup_external_service_monitoring(deployed_externals, namespace, developer_i
     
     local_resource(
         'external-services-dashboard',
+        labels=['services'],
         cmd='''
         echo "=== EXTERNAL SERVICES DASHBOARD ==="
         echo "Developer: {}"
@@ -291,7 +292,6 @@ def setup_external_service_monitoring(deployed_externals, namespace, developer_i
             namespace, namespace, namespace
         ),
         deps=[svc["name"] for svc in deployed_externals],
-        labels=["external-services", "dashboard", "monitoring", developer_id],
         auto_init=True,
         trigger_mode=TRIGGER_MODE_MANUAL
     )

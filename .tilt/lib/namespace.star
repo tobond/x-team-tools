@@ -30,6 +30,7 @@ def _setup_namespace_monitoring(namespace, developer_id, debug_mode=False):
     
     local_resource(
         'environment-status-' + developer_id,
+        labels=['infrastructure'],
         cmd='''
         echo "=== Local Development Environment Status ==="
         echo "Developer: {developer_id}"
@@ -53,7 +54,6 @@ def _setup_namespace_monitoring(namespace, developer_id, debug_mode=False):
         kubectl get pvc -n {namespace} -o wide 2>/dev/null || echo "No persistent volumes"
         '''.format(namespace=namespace, developer_id=developer_id),
         deps=[],
-        labels=['environment', 'monitoring', developer_id],
         auto_init=True,
         trigger_mode=TRIGGER_MODE_MANUAL
     )
@@ -64,6 +64,7 @@ def _setup_namespace_cleanup(namespace, developer_id, debug_mode=False):
     # Cleanup resource for removing all resources in namespace
     local_resource(
         'cleanup-environment-' + developer_id,
+        labels=['support'],
         cmd='''
         echo "=== Local Environment Cleanup ==="
         echo "This will remove ALL resources from namespace: {namespace}"
@@ -109,7 +110,6 @@ def _setup_namespace_cleanup(namespace, developer_id, debug_mode=False):
         kubectl get all -n {namespace} 2>/dev/null || echo "Environment is now clean"
         '''.format(namespace=namespace, developer_id=developer_id),
         deps=[],
-        labels=['cleanup', 'environment', developer_id],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL
     )
@@ -120,6 +120,7 @@ def _setup_environment_state_management(namespace, developer_id, debug_mode=Fals
     # Environment state tracking
     local_resource(
         'environment-state-' + developer_id,
+        labels=['monitoring'],
         cmd='''
         echo "=== Environment State Management ==="
         echo "Developer: {developer_id}"
@@ -178,7 +179,6 @@ EOF
         echo "=== State Management Complete ==="
         '''.format(namespace=namespace, developer_id=developer_id),
         deps=[],
-        labels=['state', 'environment', developer_id],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL
     )

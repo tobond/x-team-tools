@@ -161,8 +161,8 @@ Test Coverage:
     
     local_resource(
         'plugin-architecture-tests',
-        cmd=dashboard_cmd,
-        labels=['framework', 'testing']
+        labels=['framework'],
+        cmd=dashboard_cmd
     )
 
 def run_integration_test():

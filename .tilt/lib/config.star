@@ -487,6 +487,7 @@ def create_service_selection_guide(service_configs):
     
     local_resource(
         'service-selection-guide',
+        labels=['development'],
         cmd='''
         echo "=== SERVICE SELECTION GUIDE ==="
         echo "Available services in this repository:"
@@ -529,7 +530,6 @@ def create_service_selection_guide(service_configs):
         ]) + '''
         ''',
         deps=[],
-        labels=['guide', 'service-selection'],
         auto_init=True
     )
 
@@ -615,6 +615,7 @@ def create_service_customization_dashboard(tilt_config, service_configs):
     
     local_resource(
         'service-customization-dashboard',
+        labels=['development'],
         cmd='''
         echo "🎛️  SERVICE CUSTOMIZATION DASHBOARD"
         echo "=================================="
@@ -665,7 +666,6 @@ def create_service_customization_dashboard(tilt_config, service_configs):
         echo "  tilt up -- --env_overrides=app1:LOG_LEVEL=DEBUG,app1:PORT=9000"
         ''',
         deps=[],
-        labels=['customization', 'dashboard', 'configuration'],
         auto_init=True,
         trigger_mode=TRIGGER_MODE_MANUAL
     )

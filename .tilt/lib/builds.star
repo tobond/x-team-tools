@@ -558,6 +558,7 @@ def create_service_customization_validator(deployed_services, tilt_config):
     """Create service customization validator resource"""
 
     local_resource('service-customization-validator',
+        labels=['builds'],
         cmd="""
 echo "✅ Service Customization Validator"
 echo "================================="
@@ -576,7 +577,6 @@ echo "✅ All configurations validated successfully"
         len(deployed_services),
         '\n'.join(['echo "  ✓ ' + svc["name"] + ' [' + svc.get("type", "generic") + ']"' for svc in deployed_services])
     ),
-        labels=["monitoring"]
     )
 
 def setup_build_monitoring(deployed_services):
@@ -586,6 +586,7 @@ def setup_build_monitoring(deployed_services):
         return
 
     local_resource('tilt-build-monitor',
+        labels=['builds'],
         cmd="""
 echo "🔧 Build Monitoring Dashboard"
 echo "==============================="
@@ -597,7 +598,6 @@ done
 echo ""
 echo "💡 Use 'tilt logs <service>' to view build logs"
 """.format(' '.join([svc["name"] for svc in deployed_services])),
-        labels=["monitoring"]
     )
 
 def create_live_update_summary(deployed_services):
@@ -609,6 +609,7 @@ def create_live_update_summary(deployed_services):
         return
 
     local_resource('live-update-summary',
+        labels=['builds'],
         cmd="""
 echo "🔄 Live Update Summary"
 echo "====================="
@@ -623,7 +624,6 @@ echo "  Node.js: *.js, *.ts, package.json, src/**"
 echo ""
 echo "💡 Save files to trigger automatic updates"
 """.format('\n'.join(['echo "  - ' + svc["name"] + ' [' + svc.get("type", "generic") + ']"' for svc in local_services])),
-        labels=["monitoring"]
     )
 
 def create_build_strategy_dashboard(deployed_services, tilt_config):
@@ -637,6 +637,7 @@ def create_build_strategy_dashboard(deployed_services, tilt_config):
     ecr_images = len([svc for svc in deployed_services if not svc.get("build_locally", False) and not svc.get("external_image", False)])
 
     local_resource('build-strategy-dashboard',
+        labels=['builds'],
         cmd="""
 echo "🏗️  Build Strategy Dashboard"
 echo "============================"
@@ -663,7 +664,6 @@ echo "📄 Dockerfile builds use: traditional Dockerfile + docker_build()"
             else 'ECR image'
         ) for svc in deployed_services])
     ),
-        labels=["monitoring"]
     )
 
 def create_ecr_version_monitor(deployed_services):
@@ -675,6 +675,7 @@ def create_ecr_version_monitor(deployed_services):
         return
 
     local_resource('ecr-version-monitor',
+        labels=['builds'],
         cmd="""
 echo "📦 ECR Image Versions"
 echo "===================="
@@ -682,5 +683,4 @@ echo "===================="
 echo ""
 echo "💡 Check ECR for latest versions: aws ecr describe-images"
 """.format('\n'.join(['  - ' + svc["name"] + ': ' + svc.get("ecr_image", "unknown") for svc in ecr_services])),
-        labels=["monitoring"]
     )

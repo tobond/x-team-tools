@@ -372,6 +372,7 @@ def setup_cluster_monitoring(current_context, cluster_info):
     # Cluster safety validation resource
     local_resource(
         'cluster-safety-validation',
+        labels=['infrastructure'],
         cmd='''
         echo "=== CLUSTER SAFETY VALIDATION ==="
         echo "✅ SAFETY CHECKS PASSED - Local development environment confirmed"
@@ -394,13 +395,13 @@ def setup_cluster_monitoring(current_context, cluster_info):
         kubectl config view --minify -o jsonpath='{.users[0].name}'
         ''',
         deps=[],
-        labels=['infrastructure', 'safety', 'validation'],
         auto_init=True
     )
     
     # Cluster health check
     local_resource(
         'cluster-health-check',
+        labels=['infrastructure'],
         cmd='''
         echo "=== Cluster Health Check ==="
         kubectl cluster-info
@@ -412,13 +413,13 @@ def setup_cluster_monitoring(current_context, cluster_info):
         kubectl version --short 2>/dev/null || kubectl version --client
         ''',
         deps=[],
-        labels=['infrastructure', 'health-check'],
         auto_init=True
     )
     
     # Cluster initialization check
     local_resource(
         'cluster-initialization',
+        labels=['infrastructure'],
         cmd='''
         echo "=== Cluster Initialization Check ==="
         kubectl wait --for=condition=Ready nodes --all --timeout=60s
@@ -433,13 +434,13 @@ def setup_cluster_monitoring(current_context, cluster_info):
         kubectl get pods -n kube-system --field-selector=status.phase=Running
         ''',
         deps=['cluster-health-check'],
-        labels=['infrastructure', 'initialization'],
         auto_init=True
     )
     
     # Cluster resource validation
     local_resource(
         'cluster-resource-validation',
+        labels=['infrastructure'],
         cmd='''
         echo "=== Cluster Resource Validation ==="
         kubectl describe nodes | grep -A 5 "Allocated resources" || echo "Resource info not available"
@@ -453,6 +454,5 @@ def setup_cluster_monitoring(current_context, cluster_info):
         kubectl get deployment metrics-server -n kube-system 2>/dev/null || echo "Metrics server not installed (optional)"
         ''',
         deps=['cluster-initialization'],
-        labels=['infrastructure', 'validation'],
         auto_init=True
     )

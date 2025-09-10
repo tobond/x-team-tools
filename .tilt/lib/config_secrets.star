@@ -197,6 +197,7 @@ def create_developer_secret_template(developer_id, namespace, debug_mode=False):
     
     local_resource(
         'create-secret-template-' + developer_id,
+        labels=['development'],
         cmd='''
         echo "=== Developer Secret Template ({developer_id}) ==="
         echo "Creating secret template for developer isolation"
@@ -255,7 +256,6 @@ EOF
         echo "=== Secret Template Setup Complete ==="
         '''.format(developer_id=developer_id),
         deps=[],
-        labels=['secrets', 'template', developer_id],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL
     )
@@ -265,6 +265,7 @@ def setup_secret_management_monitoring(developer_id, namespace, debug_mode=False
     
     local_resource(
         'secret-management-' + developer_id,
+        labels=['development'],
         cmd='''
         echo "=== Secret Management Status ({developer_id}) ==="
         echo "Namespace: {namespace}"
@@ -309,7 +310,6 @@ def setup_secret_management_monitoring(developer_id, namespace, debug_mode=False
         echo "=== Secret Management Complete ==="
         '''.format(developer_id=developer_id, namespace=namespace),
         deps=[],
-        labels=['secrets', 'monitoring', 'security', developer_id],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL
     )

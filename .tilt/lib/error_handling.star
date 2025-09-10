@@ -200,6 +200,7 @@ def setup_recovery_resources(namespace, services_to_deploy):
     # Cleanup failed resources
     local_resource(
         'cleanup-failed-resources',
+        labels=['support'],
         cmd='''
         echo "🧹 CLEANING UP FAILED RESOURCES"
         echo "==============================="
@@ -236,12 +237,12 @@ def setup_recovery_resources(namespace, services_to_deploy):
         deps=[],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
-        labels=['recovery', 'cleanup', 'maintenance']
     )
     
     # Restart all services
     local_resource(
         'restart-all-services',
+        labels=['support'],
         cmd='''
         echo "🔄 RESTARTING ALL SERVICES"
         echo "========================="
@@ -269,12 +270,12 @@ def setup_recovery_resources(namespace, services_to_deploy):
         deps=services_to_deploy if services_to_deploy else [],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
-        labels=['recovery', 'restart', 'services']
     )
     
     # Emergency reset
     local_resource(
         'emergency-reset',
+        labels=['support'],
         cmd='''
         echo "🚨 EMERGENCY ENVIRONMENT RESET"
         echo "=============================="
@@ -304,7 +305,6 @@ def setup_recovery_resources(namespace, services_to_deploy):
         deps=[],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
-        labels=['recovery', 'emergency', 'reset']
     )
 
 def setup_error_monitoring(namespace, services_to_deploy):
@@ -312,6 +312,7 @@ def setup_error_monitoring(namespace, services_to_deploy):
     
     local_resource(
         'error-monitor',
+        labels=['support'],
         cmd='''
         echo "🚨 ERROR MONITORING DASHBOARD"
         echo "============================"
@@ -364,7 +365,6 @@ def setup_error_monitoring(namespace, services_to_deploy):
         deps=services_to_deploy if services_to_deploy else [],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
-        labels=['error-monitoring', 'recovery', 'debugging']
     )
 
 def setup_environment_validation(tilt_config):
@@ -372,6 +372,7 @@ def setup_environment_validation(tilt_config):
     
     local_resource(
         'environment-validator',
+        labels=['support'],
         cmd='''
         echo "🔍 ENVIRONMENT VALIDATION"
         echo "========================"
@@ -470,7 +471,6 @@ def setup_environment_validation(tilt_config):
         deps=[],
         auto_init=True,
         trigger_mode=TRIGGER_MODE_MANUAL,
-        labels=['validation', 'environment', 'safety']
     )
 
 def setup_error_monitoring(namespace, services_to_deploy):
@@ -478,6 +478,7 @@ def setup_error_monitoring(namespace, services_to_deploy):
     
     local_resource(
         'error-monitor',
+        labels=['support'],
         cmd='''
         echo "🚨 ERROR MONITORING DASHBOARD"
         echo "============================"
@@ -530,7 +531,6 @@ def setup_error_monitoring(namespace, services_to_deploy):
         deps=services_to_deploy if services_to_deploy else [],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
-        labels=['error-monitoring', 'recovery', 'debugging']
     )
 
 def setup_troubleshooting_resources(namespace, services_to_deploy):
@@ -538,6 +538,7 @@ def setup_troubleshooting_resources(namespace, services_to_deploy):
     
     local_resource(
         'troubleshooting-guide',
+        labels=['support'],
         cmd='''
         echo "🔧 TROUBLESHOOTING GUIDE"
         echo "======================="
@@ -599,7 +600,6 @@ def setup_troubleshooting_resources(namespace, services_to_deploy):
         deps=[],
         auto_init=False,
         trigger_mode=TRIGGER_MODE_MANUAL,
-        labels=['troubleshooting', 'guide', 'help']
     )
 
 def create_error_recovery_dashboard(namespace, services_to_deploy):
@@ -607,6 +607,7 @@ def create_error_recovery_dashboard(namespace, services_to_deploy):
     
     local_resource(
         'error-recovery-dashboard',
+        labels=['support'],
         cmd='''
         clear
         echo "🚨 ERROR RECOVERY DASHBOARD"
@@ -686,6 +687,5 @@ def create_error_recovery_dashboard(namespace, services_to_deploy):
         deps=services_to_deploy if services_to_deploy else [],
         auto_init=True,
         trigger_mode=TRIGGER_MODE_MANUAL,
-        labels=['error-recovery', 'dashboard', 'health']
     )
 

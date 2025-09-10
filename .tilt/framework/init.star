@@ -134,8 +134,8 @@ Plugin Summary:
     
     local_resource(
         'framework-status-dashboard',
-        cmd=dashboard_cmd,
-        labels=['framework', 'monitoring', 'overview']
+        labels=['framework'],
+        cmd=dashboard_cmd
     )
 
 def _create_simple_plugin_dashboard(discovery_result):
@@ -167,6 +167,6 @@ Environments:
     
     local_resource(
         'plugin-discovery-summary',
-        cmd=dashboard_cmd,
-        labels=['framework', 'monitoring', 'plugins']
+        labels=['framework'],
+        cmd=dashboard_cmd
     )
