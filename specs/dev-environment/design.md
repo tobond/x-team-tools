@@ -258,7 +258,7 @@ spec:
       containers:
       - name: {service_name}
         image: {image_name}
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
 {ports_yaml}{env_yaml}{resources_yaml}{liveness_probe}{readiness_probe}        securityContext:
           allowPrivilegeEscalation: false
           runAsNonRoot: true

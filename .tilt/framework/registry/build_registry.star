@@ -10,39 +10,6 @@ load('../interfaces/build_strategy.star', 'create_build_strategy_interface')
 _build_strategy_plugins = {}
 _build_strategy_interface = create_build_strategy_interface()
 
-def register_build_strategy_plugin(strategy_name, plugin_module):
-    """
-    Register a build strategy plugin with the registry.
-    
-    Args:
-        strategy_name (str): The build strategy identifier (e.g., 'live_update', 'ecr_image')
-        plugin_module (module): The loaded plugin module
-    """
-    
-    # Validate that plugin implements required interface functions
-    validation_result = _validate_plugin_interface(plugin_module)
-    
-    if not validation_result["valid"]:
-        fail("Build strategy plugin '{}' does not implement required interface: {}".format(
-            strategy_name, ", ".join(validation_result["missing_functions"])
-        ))
-    
-    # Get strategy info for registration
-    strategy_info = plugin_module.get_strategy_info()
-    
-    # Register the plugin
-    _build_strategy_plugins[strategy_name] = {
-        "name": strategy_name,
-        "module": plugin_module,
-        "info": strategy_info,
-        "priority": strategy_info.get("priority", 0),
-        "registered_at": "startup",
-        "interface_version": _build_strategy_interface["version"]
-    }
-    
-    print("✅ Registered build strategy plugin: {} (priority: {})".format(
-        strategy_name, strategy_info.get("priority", 0)
-    ))
 
 def get_registered_build_strategies():
     """

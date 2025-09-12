@@ -10,33 +10,6 @@ load('../interfaces/environment.star', 'create_environment_interface')
 _environment_plugins = {}
 _environment_interface = create_environment_interface()
 
-def register_environment_plugin(environment_name, plugin_module):
-    """
-    Register an environment plugin with the registry.
-    
-    Args:
-        environment_name (str): The environment identifier (e.g., 'backend-only', 'full-stack')
-        plugin_module (module): The loaded plugin module
-    """
-    
-    # Validate that plugin implements required interface functions
-    validation_result = _validate_plugin_interface(plugin_module)
-    
-    if not validation_result["valid"]:
-        fail("Environment plugin '{}' does not implement required interface: {}".format(
-            environment_name, ", ".join(validation_result["missing_functions"])
-        ))
-    
-    # Register the plugin
-    _environment_plugins[environment_name] = {
-        "name": environment_name,
-        "module": plugin_module,
-        "info": plugin_module.get_environment_info(),
-        "registered_at": "startup",
-        "interface_version": _environment_interface["version"]
-    }
-    
-    print("✅ Registered environment plugin: {}".format(environment_name))
 
 def get_registered_environments():
     """

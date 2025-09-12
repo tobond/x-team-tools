@@ -13,33 +13,6 @@ _service_interface = create_service_interface()
 # Flag to track if registry is initialized
 _registry_initialized = False
 
-def register_service_plugin(service_type, plugin_module):
-    """
-    Register a service plugin with the registry.
-    
-    Args:
-        service_type (str): The service type identifier (e.g., 'python', 'java')
-        plugin_module (module): The loaded plugin module
-    """
-    
-    # Validate that plugin implements required interface functions
-    validation_result = _validate_plugin_interface(plugin_module)
-    
-    if not validation_result["valid"]:
-        fail("Service plugin '{}' does not implement required interface: {}".format(
-            service_type, ", ".join(validation_result["missing_functions"])
-        ))
-    
-    # Register the plugin
-    _service_plugins[service_type] = {
-        "type": service_type,
-        "module": plugin_module,
-        "info": plugin_module.get_service_info(),
-        "registered_at": "startup",
-        "interface_version": _service_interface["version"]
-    }
-    
-    print("✅ Registered service plugin: {}".format(service_type))
 
 def get_registered_service_types():
     """

@@ -68,7 +68,7 @@ def generate_k8s_manifests(service_name, service_config, namespace, image_name, 
     manifest += "      containers:\n"
     manifest += "      - name: " + service_name + "\n"
     manifest += "        image: " + image_name + "\n"
-    manifest += "        imagePullPolicy: Always"
+    manifest += "        imagePullPolicy: IfNotPresent"
     manifest += container_ports_section
     manifest += env_section
     manifest += "\n        resources:\n"

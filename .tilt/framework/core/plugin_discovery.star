@@ -3,10 +3,6 @@ Plugin Discovery System
 Automatically discovers and loads plugins from the plugins directory
 """
 
-# Load registries
-load('../registry/service_registry.star', 'register_service_plugin')
-load('../registry/build_registry.star', 'register_build_strategy_plugin') 
-load('../registry/environment_registry.star', 'register_environment_plugin')
 
 # Load YAML-driven service plugin that reads service-config.yaml
 load('../../plugins/services/yaml_config_reader.star', 
