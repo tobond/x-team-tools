@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-x-team-tools is a comprehensive **Service Import/Integration Platform** powered by Tilt for local Kubernetes development. Import existing services from any repository and set up complete development environments in minutes. The platform supports multiple service types (Python, Java, Go, Node.js, CrewAI) with a simplified 3-file Tilt architecture.
+x-team-tools is a **Local Kubernetes Development Platform** powered by Tilt. The platform supports multiple service types (Python, Java, Go, Node.js, CrewAI) with a simplified 3-file Tilt architecture (384 lines total).
 
 ## Development Commands
 
@@ -15,25 +15,10 @@ x-team-tools is a comprehensive **Service Import/Integration Platform** powered 
 
 # Validate environment (checks Docker, kubectl, Tilt, cluster)
 ./scripts/validate-environment.sh
-
-# Setup team configuration
-./scripts/setup-team-config.sh
 ```
 
 ### Core Development Workflow
 ```bash
-# Import existing services
-./scripts/import-service.sh github:company/user-service
-./scripts/import-service.sh git@github.com:company/payment-service.git --branch develop
-
-# Set up predefined environments  
-./scripts/setup-environment.sh backend-only    # APIs + databases
-./scripts/setup-environment.sh full-stack     # All services
-./scripts/setup-environment.sh minimal        # Core services only
-
-# Service discovery and management
-./scripts/list-services.sh                    # Show all available services
-./scripts/service-info.sh user-service        # Detailed service information
 
 # Manual service control (--developer_id defaults to $USER)
 tilt up -- --services=service1,service2       # Start specific services
@@ -155,10 +140,9 @@ Use with: `tilt up -- --environment=backend-only`
 ## Common Development Patterns
 
 ### Working with Services
-1. **Import service**: `./scripts/import-service.sh github:company/service-name`
-2. **Review info**: `./scripts/service-info.sh service-name`
-3. **Test service**: `tilt up -- --services=service-name`
-4. **Set up environment**: `./scripts/setup-environment.sh backend-only`
+1. **Start services**: `tilt up -- --services=service-name`
+2. **Use environment preset**: `tilt up -- --environment=backend-only`
+3. **Check status**: Open Tilt UI at http://localhost:10350
 
 ### Debugging Services
 - Tilt UI at `http://localhost:10350` for real-time monitoring
