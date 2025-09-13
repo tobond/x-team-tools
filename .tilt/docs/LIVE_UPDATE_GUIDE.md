@@ -1,319 +1,377 @@
-# Live Update System Guide
+# Live Update Guide
 
-This guide explains how to use the enhanced live update system in the Tilt-based development environment.
+Live updates allow you to see code changes reflected in your running services without rebuilding Docker images. The Tilt implementation supports live updates for multiple service types with different strategies.
 
-## Overview
-
-The live update system provides near-instant deployment of code changes to your local Kubernetes environment without requiring full Docker image rebuilds. It supports multiple programming languages and includes advanced optimizations for performance.
-
-## Features
-
-### 🚀 Language-Specific Optimizations
-
-- **Python**: Sync source code, handle pip/pipenv dependencies, configuration files
-- **Java**: Hot reload compiled classes, Maven/Gradle integration, Spring Boot DevTools support
-- **Go**: Fast binary rebuilds, Go modules support, embedded assets
-- **Node.js**: TypeScript compilation, npm/yarn/pnpm support, static files
-
-### 🎯 Advanced File Watching
-
-- **Optimized Ignore Patterns**: Automatically excludes build artifacts, logs, and temporary files
-- **Smart Sync Rules**: Language-specific sync patterns for maximum efficiency
-- **Fallback Rules**: Complex changes (like Dockerfile modifications) trigger full rebuilds
-- **Watch File Integration**: Critical configuration files are monitored for immediate rebuilds
-
-### 📊 Performance Monitoring
-
-- **Live Reload Monitor**: Track file watching performance and recent changes
-- **Build Performance Monitor**: Docker system usage and cleanup recommendations
-- **Validation Testing**: Automated tests to verify live update configuration
-
-## Configuration
-
-### Service Configuration
-
-Each service in `.tilt/service-config.yaml` supports live updates when built locally:
-
-```yaml
-services:
-  my-python-service:
-    type: "python"
-    build_context: "./my-python-service"
-    dockerfile: "./my-python-service/Dockerfile"
-    # ... other configuration
-```
-
-### Enabling Live Updates
-
-Live updates are automatically enabled for services that use Dockerfile builds (services with `build_context` configuration):
-
-```bash
-# Deploy services (live updates enabled automatically for Dockerfile builds)
-tilt up -- --services=my-service
-
-# Multiple services with automatic live update detection
-tilt up -- --services=service1,service2
-```
-
-## Language-Specific Setup
+## How Live Updates Work
 
 ### Python Services
 
-**Recommended Structure:**
-```
-my-python-service/
-├── Dockerfile
-├── requirements.txt          # Watched for dependency changes
-├── pyproject.toml           # Alternative dependency file
-├── src/                     # Source code (synced)
-│   ├── __init__.py
-│   └── main.py
-├── config/                  # Configuration files (synced)
-│   └── settings.yaml
-└── .dockerignore           # Optimizes build context
-```
+For Python services, live updates work through a simple two-step process:
 
-**Live Update Features:**
-- Source code changes sync instantly
-- Dependency changes trigger `pip install`
-- Configuration files sync without restart
-- Ignores `__pycache__`, `.pytest_cache`, etc.
+1. **File Sync**: Tilt syncs changed files to the container at `/app/`
+2. **Auto-Reload**: Uvicorn's `--reload` flag detects changes and restarts the Python process
 
-**Fallback Triggers (Full Rebuild):**
-- `Dockerfile` changes
-- `requirements.txt` modifications
-- `pyproject.toml` updates
-- `setup.py` changes
-
-### Java Services
-
-**Recommended Structure:**
-```
-my-java-service/
-├── Dockerfile
-├── pom.xml                  # Maven configuration (watched)
-├── src/
-│   ├── main/
-│   │   ├── java/           # Source code
-│   │   └── resources/      # Resources (synced)
-│   └── test/
-└── target/
-    └── classes/            # Compiled classes (synced)
-```
-
-**Live Update Features:**
-- Compiled classes sync for hot reload
-- Resources and configuration sync
-- Spring Boot DevTools integration
-- Maven/Gradle build integration
-
-**Fallback Triggers (Full Rebuild):**
-- `pom.xml` or `build.gradle` changes
-- `Dockerfile` modifications
-- Major structural changes
-
-### Go Services
-
-**Recommended Structure:**
-```
-my-go-service/
-├── Dockerfile
-├── go.mod                   # Go modules (watched)
-├── go.sum                   # Module checksums (watched)
-├── cmd/                     # Main packages (synced)
-│   └── main.go
-├── pkg/                     # Library code (synced)
-├── internal/                # Internal packages (synced)
-└── config/                  # Configuration (synced)
-```
-
-**Live Update Features:**
-- Fast binary rebuilds on source changes
-- Go modules dependency management
-- Configuration and asset syncing
-- Optimized for Go project structure
-
-**Fallback Triggers (Full Rebuild):**
-- `go.mod` or `go.sum` changes
-- `Dockerfile` modifications
-- `Makefile` updates
+This results in updates applying in **under 2 seconds**.
 
 ### Node.js Services
 
-**Recommended Structure:**
+For Node.js services, live updates include:
+
+1. **Source Sync**: Syncs `/src` directory and `package.json` files
+2. **Dependency Updates**: Runs `npm install` when `package.json` changes
+3. **Auto-Restart**: Node process restarts on file changes (requires nodemon or similar)
+
+### Java Services
+
+For Java services, live updates include:
+
+1. **Source Sync**: Syncs `/src` directory and `pom.xml`
+2. **Compilation**: Runs `mvn compile` when `pom.xml` changes
+3. **Hot Reload**: Requires Spring DevTools or similar for auto-restart
+
+### Go Services
+
+For Go services, live updates include:
+
+1. **Source Sync**: Syncs `/cmd`, `/pkg` directories and go module files
+2. **Rebuild**: Runs `go build` when Go files change
+3. **Binary Update**: Replaces the running binary
+
+### External Services
+
+Live updates are **NOT** available for:
+- ❌ External services (databases, redis, etc.)
+
+These services use pre-built images and don't support live updates.
+
+## Configuration Requirements
+
+### Python Services
+
+1. **Service Type**: Must be `type: "python"` in service config
+2. **Dockerfile**: Must use uvicorn with `--reload` flag
+3. **WORKDIR**: Must be `/app` in Dockerfile
+
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 ```
-my-nodejs-service/
-├── Dockerfile
-├── package.json             # Dependencies (watched)
-├── package-lock.json        # Lock file (watched)
-├── tsconfig.json           # TypeScript config (watched)
-├── src/                    # Source code (synced)
-│   ├── index.ts
-│   └── routes/
-├── public/                 # Static files (synced)
-└── config/                 # Configuration (synced)
+
+### Node.js Services
+
+1. **Service Type**: Must be `type: "node"` or `type: "nodejs"` in service config
+2. **Dockerfile**: Should use nodemon or similar for auto-restart
+3. **Directory Structure**: Source code in `/src` directory
+
+```dockerfile
+FROM node:18-slim
+WORKDIR /app
+COPY package*.json .
+RUN npm install
+COPY . .
+CMD ["npm", "run", "dev"]  # Assumes package.json has "dev": "nodemon src/index.js"
 ```
 
-**Live Update Features:**
-- Source code syncing (JS/TS)
-- Automatic TypeScript compilation
-- npm/yarn/pnpm dependency management
-- Static files and views syncing
+### Java Services
 
-**Fallback Triggers (Full Rebuild):**
-- `package.json` changes
-- Build configuration updates
-- `Dockerfile` modifications
+1. **Service Type**: Must be `type: "java"` in service config
+2. **Build Tool**: Maven with `pom.xml` in project root
+3. **Hot Reload**: Spring Boot DevTools recommended
 
-## Performance Optimization
-
-### File Watching Optimization
-
-The system automatically ignores common directories and files that don't affect runtime:
-
-```
-# Automatically ignored patterns
-**/.git/**
-**/node_modules/**
-**/__pycache__/**
-**/target/**
-**/build/**
-**/dist/**
-**/*.log
-**/logs/**
-**/tmp/**
-**/temp/**
+```dockerfile
+FROM maven:3.8-openjdk-17
+WORKDIR /app
+COPY pom.xml .
+RUN mvn dependency:go-offline
+COPY src ./src
+CMD ["mvn", "spring-boot:run"]
 ```
 
-### Docker Build Context Optimization
+### Go Services
 
-Each service type gets optimized `.dockerignore` patterns:
+1. **Service Type**: Must be `type: "go"` in service config
+2. **Structure**: Code in `/cmd` and `/pkg` directories
+3. **Module**: `go.mod` and `go.sum` files required
 
-- **Python**: Excludes `__pycache__`, `.pytest_cache`, `venv`, etc.
-- **Java**: Excludes `target/`, `.gradle/`, `*.class`, etc.
-- **Go**: Excludes `*.exe`, `*.test`, `vendor/`, etc.
-- **Node.js**: Excludes `node_modules/`, `coverage/`, `dist/`, etc.
+```dockerfile
+FROM golang:1.21-alpine
+WORKDIR /app
+COPY go.* .
+RUN go mod download
+COPY . .
+RUN go build -o main ./cmd
+CMD ["./main"]
+```
 
-### Custom Ignore Patterns
+## How It's Implemented
 
-You can customize ignore patterns by modifying the sync rules in your service configuration or by adding a `.dockerignore` file to your service directory.
+The live update configuration is automatically applied in `.tilt/services.star`:
 
-## Monitoring and Debugging
+```python
+def get_live_updates(service_type, build_context):
+    if service_type == "python":
+        return [
+            sync(build_context + '/', '/app/'),  # Sync all files to /app
+            # Uvicorn --reload handles restart automatically
+        ]
+    elif service_type == "nodejs" or service_type == "node":
+        return [
+            sync(build_context + '/src', '/app/src'),
+            sync(build_context + '/package*.json', '/app/'),
+            run('npm install', trigger=[build_context + '/package.json'])
+        ]
+    elif service_type == "java":
+        return [
+            sync(build_context + '/src', '/app/src'),
+            sync(build_context + '/pom.xml', '/app/pom.xml'),
+            run('mvn compile', trigger=[build_context + '/pom.xml'])
+        ]
+    elif service_type == "go":
+        return [
+            sync(build_context + '/cmd', '/app/cmd'),
+            sync(build_context + '/pkg', '/app/pkg'),
+            sync(build_context + '/go.*', '/app/'),
+            run('go build -o /app/main ./cmd', trigger=[build_context + '/**/*.go'])
+        ]
+    return []  # No live updates for external services
+```
 
-### Tilt UI Resources
+## Testing Live Updates
 
-The system creates several monitoring resources in the Tilt UI:
+### Python Service Example
 
-1. **live-reload-monitor**: Shows file watching performance and recent changes
-2. **build-monitor**: Docker system usage and cleanup recommendations
-3. **live-update-summary**: Configuration summary for all services
-4. **live-update-test**: Validation tests for live update configuration
+1. **Start your Python service:**
+   ```bash
+   tilt up -- --services=ai-agentic-test-app
+   ```
 
-### Manual Testing
+2. **Make a code change:**
+   ```python
+   # Edit services/ai-agentic-test-app/main.py
+   # Add a new endpoint or modify existing code
+   ```
 
-1. **Make a small change** to a source file
-2. **Check Tilt UI** for automatic rebuild trigger
-3. **Verify the change** is reflected in the running container
-4. **Test dependency changes** trigger appropriate rebuilds
+3. **Watch the automatic reload:**
+   ```
+   1 File Changed: [services/ai-agentic-test-app/main.py]
+   Will copy 1 file(s) to container
+   WARNING: WatchFiles detected changes in 'main.py'. Reloading...
+   INFO: Application startup complete.
+   ```
 
-### Troubleshooting
+### Node.js Service Example
 
-#### Slow Live Updates
-- Check ignore patterns are properly configured
-- Verify `.dockerignore` exists and is optimized
-- Monitor file watching statistics in `live-reload-monitor`
+1. **Start your Node.js service:**
+   ```bash
+   tilt up -- --services=node-service
+   ```
 
-#### Changes Don't Trigger Rebuilds
-- Verify file paths match sync patterns
-- Check if files are being ignored unintentionally
-- Ensure build context is correct
+2. **Modify source files in `/src`** - changes sync immediately
+3. **Update package.json** - triggers `npm install`
 
-#### Too Many Full Rebuilds
-- Review fallback rules configuration
-- Check if critical files are changing unexpectedly
-- Verify ignore patterns exclude temporary files
+### Java Service Example
 
-#### Debug Mode
-Enable debug mode for detailed logging:
+1. **Start your Java service:**
+   ```bash
+   tilt up -- --services=java-service
+   ```
 
+2. **Modify Java files in `/src`** - syncs and triggers compilation
+3. **Update pom.xml** - triggers `mvn compile`
+
+### Go Service Example
+
+1. **Start your Go service:**
+   ```bash
+   tilt up -- --services=go-service
+   ```
+
+2. **Modify Go files** - triggers rebuild and binary replacement
+
+## Common Issues
+
+### Live Updates Not Working
+
+#### Check Service Type
 ```bash
-tilt up -- --enable_debug=true --services=my-service
+# Verify service is type: python
+grep -A 5 "service-name:" .tilt/service-config.yaml
 ```
 
-## Best Practices
+#### Check Dockerfile
+```bash
+# Ensure uvicorn uses --reload
+grep "reload" services/service-name/Dockerfile
+```
 
-### 1. Organize Code Structure
-- Use standard directory structures for your language
-- Keep source code in dedicated directories (`src/`, `lib/`, etc.)
-- Separate configuration from code
+#### Check WORKDIR
+```bash
+# WORKDIR must be /app
+grep "WORKDIR" services/service-name/Dockerfile
+```
 
-### 2. Optimize Dependencies
-- Pin dependency versions for consistent builds
-- Use lock files (`package-lock.json`, `go.sum`, etc.)
-- Minimize dependency changes during development
+#### Verify Files Are Syncing
+```bash
+# Check files in container
+kubectl exec -it deployment/service-name -n dev-$(whoami) -- ls -la /app/
+```
 
-### 3. Configure Ignore Patterns
-- Add `.dockerignore` to each service
-- Exclude build artifacts and temporary files
-- Use language-specific ignore patterns
+### File Permissions Issues
 
-### 4. Test Live Updates
-- Run the `live-update-test` resource regularly
-- Test both source code and configuration changes
-- Verify fallback rules work for major changes
+If files aren't updating due to permissions:
+```dockerfile
+# Add user permissions in Dockerfile
+RUN chmod -R 755 /app
+```
 
-### 5. Monitor Performance
-- Check `live-reload-monitor` for file watching stats
-- Use `build-monitor` for Docker system health
-- Clean up unused images and volumes regularly
+### Uvicorn Not Reloading
 
-## Advanced Configuration
+Ensure uvicorn is properly configured:
+```dockerfile
+# Correct - uses --reload
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
-### Custom Live Update Rules
+# Wrong - missing --reload
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
 
-You can customize live update rules by modifying the `get_live_updates_for_type` function in `.tilt/lib/builds.star`:
+## Performance Considerations
 
+### What Gets Synced
+
+- **All files** in the build context are synced
+- This includes source code, config files, etc.
+- Large files or directories should be added to `.dockerignore`
+
+### Sync Speed
+
+- File sync is nearly instantaneous
+- Uvicorn reload takes 1-2 seconds
+- Total update time: **< 2 seconds**
+
+### Best Practices
+
+1. **Use .dockerignore**: Exclude unnecessary files
+   ```
+   __pycache__
+   *.pyc
+   .git
+   .env
+   venv/
+   .pytest_cache/
+   ```
+
+2. **Keep build context small**: Only include necessary files
+
+3. **Monitor logs**: Watch for reload messages to confirm updates
+
+## Supported Service Types
+
+### Full Live Update Support
+
+Live updates are fully supported for:
+- ✅ **Python**: File sync + uvicorn auto-reload
+- ✅ **Node.js**: Source sync + npm updates + nodemon
+- ✅ **Java**: Source sync + Maven compilation + Spring DevTools
+- ✅ **Go**: Source sync + binary rebuild
+
+### Limited Live Update Support
+
+- ⚠️ **CrewAI services**: File sync only (Python-based agents, may need manual restart)
+
+### No Live Update Support
+
+Live updates are NOT supported for:
+- ❌ **External services**: Pre-built images (databases, redis, etc.)
+
+### Manual Rebuild for Unsupported Types
+
+For services without live updates:
+1. Use `tilt trigger service-name` to manually rebuild
+2. The rebuild will be fast due to Docker layer caching
+
+## Example: Complete Python Service with Live Updates
+
+### Directory Structure
+```
+services/my-api/
+├── Dockerfile
+├── requirements.txt
+├── main.py
+└── .dockerignore
+```
+
+### Dockerfile
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+```
+
+### main.py
 ```python
-# Example: Custom sync rule for a specific directory
-sync(build_context + '/custom-dir', '/app/custom-dir', 
-     ignore=['**/*.log', '**/tmp/**'])
+from fastapi import FastAPI
 
-# Example: Custom run command on file changes
-run('npm run custom-build', 
-    trigger=[build_context + '/custom-config.json'])
+app = FastAPI()
+
+@app.get("/")
+async def root():
+    return {"message": "Hello World - Live Updates Working!"}
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
 ```
 
-### Custom Fallback Rules
-
-Add custom fallback rules for your specific use case:
-
-```python
-# Example: Additional fallback triggers
-fallback_rules.extend([
-    build_context + '/custom-config.yaml',
-    build_context + '/schema.sql'
-])
+### requirements.txt
+```
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
 ```
 
-## Integration with Development Workflow
+### Service Configuration
+```yaml
+services:
+  my-api:
+    type: "python"
+    build_context: "./services/my-api"
+    dockerfile: "./services/my-api/Dockerfile"
+    ports: [8000]
+    health_check:
+      path: "/health"
+      port: 8000
+```
 
-### IDE Integration
-- Use port-forwarding for debugging
-- Configure IDE to work with containerized services
-- Set up remote debugging when needed
+### Deploy and Test
+```bash
+# Deploy
+tilt up -- --services=my-api 
+# Edit main.py - change "Hello World" to "Hello Tilt"
+# Save the file
+# Check http://localhost:8000 - should show updated message in < 2 seconds
+```
 
-### Testing Integration
-- Live updates work with test files
-- Use test-specific ignore patterns
-- Configure test runners for containerized environment
+## Summary
 
-### CI/CD Integration
-- Live updates are development-only
-- Production builds use standard Docker builds
-- Ensure `.dockerignore` works for both scenarios
+The Tilt implementation provides comprehensive live update support:
 
-## Conclusion
+✅ **Python**: Full sync + uvicorn auto-reload (< 2 seconds)
+✅ **Node.js**: Source sync + dependency updates + nodemon
+✅ **Java**: Source sync + Maven compilation + hot reload
+✅ **Go**: Source sync + binary rebuild
+⚠️ **CrewAI**: File sync only (Python-based, may need manual restart)
+❌ **External**: No live updates (use pre-built images)
 
-The live update system provides a powerful development experience with near-instant feedback loops. By following the best practices and using the monitoring tools, you can achieve optimal performance for your development workflow.
+Live updates significantly speed up the development cycle by eliminating the need for Docker image rebuilds. Each service type has optimized sync patterns for its specific needs.
 
-For more information, check the Tilt UI monitoring resources and run the validation tests regularly to ensure your configuration is optimized.
+For unsupported service types, use manual rebuilds:
+```bash
+tilt trigger service-name
+```

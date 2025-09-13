@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-x-team-tools is a comprehensive **Service Import/Integration Platform** powered by Tilt for local Kubernetes development. Import existing services from any repository and set up complete development environments in minutes. The platform supports multiple service types (Python, Java, Go, Node.js, CrewAI) with modular architecture and strict safety controls.
+x-team-tools is a comprehensive **Service Import/Integration Platform** powered by Tilt for local Kubernetes development. Import existing services from any repository and set up complete development environments in minutes. The platform supports multiple service types (Python, Java, Go, Node.js, CrewAI) with a simplified 3-file Tilt architecture.
 
 ## Development Commands
 
@@ -13,7 +13,7 @@ x-team-tools is a comprehensive **Service Import/Integration Platform** powered 
 # Initial setup (macOS)
 ./scripts/setup-macos.sh
 
-# Validate environment
+# Validate environment (checks Docker, kubectl, Tilt, cluster)
 ./scripts/validate-environment.sh
 
 # Setup team configuration
@@ -35,12 +35,16 @@ x-team-tools is a comprehensive **Service Import/Integration Platform** powered 
 ./scripts/list-services.sh                    # Show all available services
 ./scripts/service-info.sh user-service        # Detailed service information
 
-# Manual service control
-tilt up service1 service2 -- --developer_id=$(whoami)
-tilt down
+# Manual service control (--developer_id defaults to $USER)
+tilt up -- --services=service1,service2       # Start specific services
+tilt up -- --environment=backend-only         # Use environment preset
+tilt down                                      # Stop all services
 
 # View service logs
 tilt logs service-name
+
+# Trigger manual rebuild (for services without live updates)
+tilt trigger service-name
 
 # Reset environment if needed  
 tilt down && kubectl delete namespace dev-$(whoami)
@@ -54,54 +58,50 @@ kubectl get all -n dev-$(whoami)
 # View pod logs
 kubectl logs -f deployment/service-name -n dev-$(whoami)
 
+# Execute into container
+kubectl exec -it deployment/service-name -n dev-$(whoami) -- /bin/bash
+
 # Check cluster status
 kubectl cluster-info
 ```
 
 ## Architecture Overview
 
-### Modular Tilt Architecture
-The main `Tiltfile` (193 lines) orchestrates a modular system with clear separation of concerns:
+### Simplified Tilt Architecture (384 lines total)
+The system uses just 3 files with direct, clear implementations:
 
 ```
-Tiltfile                       # Main orchestration
-├── .tilt/lib/config.star      # Configuration management and validation
-├── .tilt/lib/cluster.star     # Cluster safety detection and validation
-├── .tilt/lib/services.star    # Service deployment orchestration
-├── .tilt/lib/builds.star      # Build strategies and live updates
-├── .tilt/lib/monitoring.star  # Monitoring and validation resources
-├── .tilt/lib/dependencies.star # Service dependency management
-├── .tilt/lib/namespace.star   # Isolated namespace setup
-├── .tilt/lib/external_services.star # External service deployment
-└── .tilt/lib/error_handling.star   # Comprehensive error handling
+Tiltfile (90 lines)                # Main orchestration
+├── .tilt/config.star (42 lines)   # Configuration parsing & environment loading
+└── .tilt/services.star (252 lines) # Service deployment & live updates
 ```
 
 ### Key Design Principles
-- **Safety First**: Multi-layer validation prevents operations on production clusters
-- **Configuration-Driven**: All settings managed through `.tilt/service-config.yaml`
-- **Developer Isolation**: Each developer gets their own namespace (`dev-$USER`)
-- **Flexible Build Strategies**: Support for ECR images, local builds, or live source builds
-- **Comprehensive Monitoring**: Built-in debugging and monitoring resources
+- **Simplicity First**: Direct functions over abstractions, 96% code reduction from original
+- **Safety Validation**: Prevents operations on production clusters
+- **Configuration-Driven**: All settings in `.tilt/service-config.yaml`
+- **Developer Isolation**: Each developer gets `dev-$USER` namespace by default
+- **Live Updates**: Comprehensive support for Python, Node.js, Java, and Go services
 
 ## Service Configuration
 
 Services are defined in `.tilt/service-config.yaml`:
 
-### Service Types Supported
-- **python**: Python applications with live reload
-- **external**: External services (postgres, redis, mock)
-- **java**: Java applications (Spring Boot, etc.)
-- **go**: Go applications with fast rebuilds
-- **node**: Node.js applications
-- **crewai**: AI agent services
+### Service Types & Live Update Support
+- **python**: Full live reload with uvicorn (< 2 seconds)
+- **node/nodejs**: Source sync + npm updates + nodemon
+- **java**: Source sync + Maven compilation + Spring DevTools
+- **go**: Source sync + binary rebuild
+- **crewai**: Limited support (file sync only, Python-based)
+- **external**: No live updates (databases, redis, etc.)
 
 ### Example Service Definition
 ```yaml
 services:
-  ai-agentic-test-app:
+  my-python-app:
     type: "python"
-    build_context: "./services/ai-agentic-test-app"
-    dockerfile: "./services/ai-agentic-test-app/Dockerfile"
+    build_context: "./services/my-python-app"
+    dockerfile: "./services/my-python-app/Dockerfile"
     dependencies: ["database", "redis"]
     ports: [8000]
     env_vars:
@@ -112,102 +112,85 @@ services:
       port: 8000
 ```
 
-## Safety Features
+## Live Updates Configuration
 
-The system includes multiple safety layers:
+### Requirements by Service Type
 
-### Cluster Safety Validation
-- Context name validation (blocks production-like contexts)
-- API server URL validation
-- Kubernetes cluster type detection
-- Continuous safety monitoring during deployment
-
-### Namespace Isolation
-- Each developer gets isolated namespace: `dev-$USER`
-- Automatic namespace creation and cleanup
-- Resource quotas and monitoring
-
-### Error Handling
-- Comprehensive error recovery dashboards
-- Build failure monitoring and reporting
-- Service health validation
-- Dependency resolution monitoring
-
-## Service Import & Management
-
-### Service Import
-```bash
-# Import existing service from repository
-./scripts/import-service.sh github:company/user-service
-./scripts/import-service.sh git@github.com:company/service.git --branch develop
-
-# Import local directory reference
-./scripts/import-service.sh ../existing-service --type reference
+**Python**: Dockerfile must use uvicorn with --reload
+```dockerfile
+WORKDIR /app
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 ```
 
-### Service Discovery
-```bash
-# List all available services
-./scripts/list-services.sh
-
-# Get detailed service information
-./scripts/service-info.sh service-name
-
-# Set up predefined environments
-./scripts/setup-environment.sh backend-only
-./scripts/setup-environment.sh full-stack
+**Node.js**: Package.json must have nodemon
+```json
+"scripts": {
+  "dev": "nodemon src/index.js"
+}
 ```
 
-### Configuration Management
-- Team-wide configuration in `.tilt/team/`
-- Environment-specific settings in `.tilt/environments/`
-- Imported services in `services/` directory
+**Java**: pom.xml needs Spring DevTools
+```xml
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-devtools</artifactId>
+</dependency>
+```
+
+**Go**: Standard directory structure required
+- Code in `/cmd` and `/pkg` directories
+- `go.mod` and `go.sum` files
+
+## Environment Presets
+
+Defined in `.tilt/environments.yaml`:
+- **minimal**: Core services only
+- **backend-only**: APIs + databases
+- **full-stack**: All services
+- **staging-mirror**: Matches staging environment
+- **test-env**: Testing configuration
+
+Use with: `tilt up -- --environment=backend-only`
 
 ## Common Development Patterns
 
 ### Working with Services
-1. **Import existing service**: `./scripts/import-service.sh github:company/service-name`
-2. **Review service info**: `./scripts/service-info.sh service-name`
-3. **Test service**: `tilt up service-name -- --developer_id=$(whoami)`
+1. **Import service**: `./scripts/import-service.sh github:company/service-name`
+2. **Review info**: `./scripts/service-info.sh service-name`
+3. **Test service**: `tilt up -- --services=service-name`
 4. **Set up environment**: `./scripts/setup-environment.sh backend-only`
 
 ### Debugging Services
-- Use Tilt UI at `http://localhost:10350` for real-time monitoring
-- Check service logs: `tilt logs service-name`
-- Use debugging resources created automatically in Tilt UI
-- Access comprehensive dashboards for build strategies and service health
+- Tilt UI at `http://localhost:10350` for real-time monitoring
+- Service logs: `tilt logs service-name`
+- Pod details: `kubectl describe pod <pod-name> -n dev-$(whoami)`
+- Container exec: `kubectl exec -it deployment/service-name -n dev-$(whoami) -- /bin/bash`
 
-### Build Strategy Selection
-- **ECR Images**: Use pre-built images from ECR registry (default)
-- **Local Builds**: Build images locally with `--build_local=service-name`
-- **Live Updates**: Hot-reload source changes without rebuilds (Python, Node.js)
-
-## Testing and Validation
-
-### Environment Validation
-- Run `./scripts/validate-environment.sh` to check all dependencies
-- Validates: Docker, kubectl, Tilt, cluster connectivity, and safety
-
-### Service Testing
-- Health checks defined per service in configuration
-- Automatic dependency validation
-- Build and deployment monitoring through Tilt UI
+### Testing Live Updates
+1. Make code changes in service directory
+2. Save files
+3. Watch automatic reload:
+   - Python: < 2 seconds with uvicorn
+   - Node.js: nodemon restart
+   - Java: Maven recompile + Spring DevTools
+   - Go: Binary rebuild
 
 ## Important File Locations
 
-- **Main Configuration**: `.tilt/service-config.yaml`
+- **Service Configuration**: `.tilt/service-config.yaml`
+- **Environment Presets**: `.tilt/environments.yaml`
+- **Main Tilt Files**: `Tiltfile`, `.tilt/config.star`, `.tilt/services.star`
+- **Imported Services**: `services/` directory
+- **Documentation**: `.tilt/docs/` directory
+- **Scripts**: `scripts/` directory
 - **Team Standards**: `.tilt/team/`
-- **Imported Services**: `services/`
-- **Documentation**: `.tilt/docs/`
-- **Import Scripts**: `scripts/import-service.sh`, `scripts/list-services.sh`, `scripts/service-info.sh`
-- **Environment Scripts**: `scripts/setup-environment.sh`
-- **AI Prompts**: `prompts/`
 
 ## Tilt Best Practices Followed
 
-- Modular Starlark libraries for maintainability
-- Configuration-driven approach with validation
-- Comprehensive error handling and recovery
-- Safety-first design with multiple validation layers
-- Developer isolation and team collaboration features
-- Live updates and fast development cycles
+- Direct use of `docker_build()` with live updates instead of complex abstractions
+- Simple `k8s_resource()` for resource management
+- Configuration validation before deployment
+- Namespace isolation per developer (`dev-$USER`)
+- Dependency filtering for deployed services only
+- Clear separation of concerns across 3 focused files
+- Live update configurations optimized per language/framework

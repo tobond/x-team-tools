@@ -1,645 +1,358 @@
 # Troubleshooting Guide
 
-This guide helps you diagnose and resolve common issues with the Tilt-based development environment.
-
-## Table of Contents
-
-- [Quick Diagnostics](#quick-diagnostics)
-- [Common Issues](#common-issues)
-- [Service-Specific Issues](#service-specific-issues)
-- [Performance Issues](#performance-issues)
-- [Configuration Issues](#configuration-issues)
-- [Cluster Issues](#cluster-issues)
-- [Advanced Troubleshooting](#advanced-troubleshooting)
-- [Getting Help](#getting-help)
+This guide helps you diagnose and resolve common issues with the simplified Tilt development environment.
 
 ## Quick Diagnostics
 
-### First Steps for Any Issue
-
-1. **Check the Tilt UI** at [http://localhost:10350](http://localhost:10350)
-   - Look for red/yellow status indicators
-   - Review error messages and logs
-
-2. **Run environment validation**
-   ```bash
-   ./scripts/validate-environment.sh
-   ```
-
-3. **Check basic connectivity**
-   ```bash
-   kubectl cluster-info
-   kubectl get nodes
-   ```
-
-4. **Verify your configuration**
-   ```bash
-   tilt validate
-   ```
-
-### Quick Reset Commands
-
+### Check System Status
 ```bash
-# Soft reset - restart Tilt
-tilt down
-tilt up
+# 1. Check Tilt is running
+tilt version
 
-# Medium reset - clean namespace
-tilt down
-kubectl delete namespace dev-$(whoami)
-tilt up
-
-# Hard reset - clean everything
-tilt down
-docker system prune -f
-kubectl delete namespace dev-$(whoami)
-tilt up
-```
-
-## Common Issues
-
-### Issue: Tilt Won't Start
-
-#### Symptoms
-- `tilt up` command fails immediately
-- Error messages about configuration or cluster connectivity
-
-#### Diagnosis
-```bash
-# Check Tilt configuration
-tilt validate
-
-# Check cluster connectivity
+# 2. Check Kubernetes cluster
 kubectl cluster-info
 
-# Check Docker status
-docker info
+# 3. Check your namespace
+kubectl get all -n dev-$(whoami)
+
+# 4. Check Tilt UI
+open http://localhost:10350
 ```
 
-#### Solutions
-1. **Invalid Tiltfile syntax**
+## Common Issues and Solutions
+
+### 1. Tilt Won't Start
+
+#### Symptom
+```
+Error: cannot connect to Kubernetes cluster
+```
+
+#### Solution
+1. Verify Docker Desktop is running
+2. Enable Kubernetes in Docker Desktop settings
+3. Check cluster context:
    ```bash
-   tilt validate
-   # Fix syntax errors shown in output
+   kubectl config current-context
+   kubectl cluster-info
    ```
 
-2. **Kubernetes cluster not accessible**
-   ```bash
-   # For Docker Desktop
-   # Enable Kubernetes in Docker Desktop settings
-   
-   # For kind
-   kind create cluster --name tilt-dev
-   
-   # For k3d
-   k3d cluster create tilt-dev
-   ```
+### 2. Service Not Deploying
 
-3. **Docker not running**
-   ```bash
-   # Start Docker Desktop or Docker daemon
-   # On macOS: Start Docker Desktop app
-   # On Linux: sudo systemctl start docker
-   ```
-
-### Issue: Service Won't Deploy
-
-#### Symptoms
-- Service shows red status in Tilt UI
-- Build errors or deployment failures
-- Pod stuck in pending/error state
+#### Symptom
+Service doesn't appear in Tilt UI or shows errors
 
 #### Diagnosis
 ```bash
-# Check service status
-kubectl get pods -n dev-$(whoami)
-kubectl describe pod <pod-name> -n dev-$(whoami)
+# Check if service is defined
+grep "service-name" .tilt/service-config.yaml
 
-# Check service logs
-tilt logs <service-name>
-kubectl logs deployment/<service-name> -n dev-$(whoami)
+# Check Tilt logs
+tilt logs
+
+# Check namespace
+kubectl get all -n dev-$(whoami)
 ```
 
-#### Solutions
-1. **Image build failures**
-   ```bash
-   # Check Dockerfile syntax
-   docker build -t test-build ./path/to/service
-   
-   # Check build context
-   ls -la ./path/to/service
-   ```
+#### Common Causes
+- **Service name typo**: Check spelling in `--services` flag
+- **Missing configuration**: Verify service exists in `.tilt/service-config.yaml`
+- **Build context missing**: Ensure `build_context` path exists
+- **Dockerfile missing**: Verify `dockerfile` path is correct
 
-2. **Resource constraints**
-   ```bash
-   # Check node resources
-   kubectl top nodes
-   
-   # Reduce resource requests in service-config.yaml
-   resources:
-     requests:
-       cpu: "50m"      # Reduce from higher values
-       memory: "64Mi"
-   ```
+### 3. Build Failures
 
-3. **Missing dependencies**
-   ```bash
-   # Check if dependency services are running
-   kubectl get pods -n dev-$(whoami)
-   
-   # Start dependencies first
-   tilt up -- --services=database,redis
-   # Then start your service
-   ```
-
-### Issue: Live Updates Not Working
-
-#### Symptoms
-- Code changes don't trigger rebuilds
-- Changes don't appear in running containers
-- Slow or no response to file changes
+#### Symptom
+Red build status in Tilt UI
 
 #### Diagnosis
 ```bash
-# Check live update configuration
-tilt logs <service-name> | grep -i sync
-
-# Verify file paths
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- ls -la /app
-
-# Check file watching
-tilt logs | grep -i watch
+# View build logs in Tilt UI
+# Or check via CLI
+tilt logs service-name
 ```
 
-#### Solutions
-1. **Incorrect sync paths**
-   ```yaml
-   # Fix paths in service-config.yaml
-   live_update:
-     sync_rules:
-       - local_path: "./src"          # Correct local path
-         remote_path: "/app/src"      # Correct container path
-   ```
+#### Common Causes
+- **Dockerfile errors**: Check Dockerfile syntax
+- **Missing files**: Ensure all COPY sources exist
+- **Base image issues**: Verify base image is accessible
 
-2. **Files being ignored**
-   ```yaml
-   # Check ignore patterns
-   live_update:
-     ignore_patterns:
-       - "**/*.pyc"
-       - "**/__pycache__"
-       # Remove patterns that might be blocking your files
-   ```
+#### Example Fix
+```dockerfile
+# Ensure WORKDIR matches your app structure
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+```
 
-3. **Container doesn't support live updates**
-   ```yaml
-   # Add restart fallback
-   live_update:
-     sync_rules:
-       - local_path: "./src"
-         remote_path: "/app/src"
-     restart_container: true  # Force restart if sync fails
-   ```
+### 4. Live Updates Not Working
 
-### Issue: Port Forwarding Not Working
-
-#### Symptoms
-- Cannot access services via localhost
-- Connection refused errors
-- Services not accessible from browser
+#### Symptom
+Code changes don't trigger reload in supported services
 
 #### Diagnosis
 ```bash
-# Check port forwarding status
-kubectl get services -n dev-$(whoami)
-kubectl port-forward service/<service-name> 8080:8080 -n dev-$(whoami)
+# Check if files are syncing
+kubectl exec -it deployment/service-name -n dev-$(whoami) -- ls -la /app/
 
-# Check if ports are in use
-lsof -i :8080
+# Check service type configuration
+grep "type:" .tilt/service-config.yaml -A 1
 ```
 
-#### Solutions
-1. **Port conflicts**
-   ```bash
-   # Find what's using the port
-   lsof -i :8080
-   
-   # Kill the process or use different port
-   tilt up -- --port_offset=100  # Use ports 8180, 8181, etc.
-   ```
+#### Solutions by Service Type
 
-2. **Service not exposing correct port**
-   ```yaml
-   # Fix service configuration
-   services:
-     my-service:
-       ports: [8080]  # Ensure this matches container port
-   ```
+**Python Services:**
+```dockerfile
+# Ensure uvicorn has --reload
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+WORKDIR /app  # Must be /app
+```
 
-3. **Firewall blocking connections**
-   ```bash
-   # Check firewall rules (varies by OS)
-   # macOS: System Preferences > Security & Privacy > Firewall
-   # Linux: sudo ufw status
-   ```
+**Node.js Services:**
+```json
+// package.json must have nodemon
+"scripts": {
+  "dev": "nodemon src/index.js"
+}
+```
 
-## Service-Specific Issues
+**Java Services:**
+```xml
+<!-- pom.xml needs Spring DevTools -->
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-devtools</artifactId>
+</dependency>
+```
 
-### Python Services
-
-#### Issue: Dependencies not installing
+**Go Services:**
 ```bash
-# Check requirements.txt
-cat requirements.txt
-
-# Verify pip install in container
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- pip list
-
-# Fix live update rules
-live_update:
-  sync_rules:
-    - local_path: "./requirements.txt"
-      remote_path: "/app/requirements.txt"
-  run_commands:
-    - "pip install -r requirements.txt"
-  restart_on:
-    - "requirements.txt"
+# Verify directory structure
+ls services/service-name/cmd
+ls services/service-name/pkg
 ```
 
-#### Issue: Import errors
-```bash
-# Check Python path
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- python -c "import sys; print(sys.path)"
+### 5. Port Forwarding Issues
 
-# Verify file sync
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- ls -la /app/src
-```
-
-### Java Services
-
-#### Issue: Compilation errors
-```bash
-# Check Maven/Gradle build
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- mvn compile
-
-# Verify classpath
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- java -cp /app/classes MyClass
-```
-
-#### Issue: Hot reload not working
-```yaml
-# Use proper live update for Java
-live_update:
-  sync_rules:
-    - local_path: "./target/classes"
-      remote_path: "/app/classes"
-  restart_container: true  # Java often needs restart
-  fall_back_on:
-    - "pom.xml"
-    - "src/main/resources"
-```
-
-### Go Services
-
-#### Issue: Build failures
-```bash
-# Check Go modules
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- go mod tidy
-
-# Verify build
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- go build ./cmd
-```
-
-### Node.js Services
-
-#### Issue: npm install failures
-```bash
-# Check package.json
-cat package.json
-
-# Clear npm cache
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- npm cache clean --force
-
-# Use npm ci for consistent installs
-live_update:
-  run_commands:
-    - "npm ci"  # Instead of npm install
-```
-
-## Performance Issues
-
-### Issue: Slow Builds
+#### Symptom
+Cannot access service on localhost
 
 #### Diagnosis
 ```bash
-# Check build times in Tilt UI
-# Look for bottlenecks in build logs
-
-# Check Docker build cache
-docker system df
+# Check port forwarding in Tilt UI
+# Or manually forward
+kubectl port-forward service/service-name 8000:8000 -n dev-$(whoami)
 ```
 
-#### Solutions
-1. **Optimize Dockerfile**
-   ```dockerfile
-   # Use multi-stage builds
-   FROM node:16-alpine AS builder
-   WORKDIR /app
-   COPY package*.json ./
-   RUN npm ci --only=production
-   
-   FROM node:16-alpine AS runtime
-   COPY --from=builder /app/node_modules ./node_modules
-   COPY . .
-   ```
+#### Common Causes
+- **Port already in use**: Another process using the port
+- **Service not running**: Pod may be crashing
+- **Wrong port**: Check service configuration
 
-2. **Improve build context**
-   ```bash
-   # Add .dockerignore
-   echo "node_modules" >> .dockerignore
-   echo ".git" >> .dockerignore
-   echo "*.log" >> .dockerignore
-   ```
+### 6. Database Connection Errors
 
-3. **Use build caching**
-   ```yaml
-   services:
-     my-service:
-       build_args:
-         - "BUILDKIT_INLINE_CACHE=1"
-   ```
-
-### Issue: High Resource Usage
+#### Symptom
+Application can't connect to database
 
 #### Diagnosis
 ```bash
-# Check resource usage
-kubectl top nodes
-kubectl top pods -n dev-$(whoami)
-docker stats
+# Check database is running
+kubectl get pods -n dev-$(whoami) | grep database
+
+# Check database logs
+kubectl logs deployment/database -n dev-$(whoami)
+
+# Test connection
+kubectl exec -it deployment/database -n dev-$(whoami) -- pg_isready
 ```
 
-#### Solutions
-1. **Reduce resource requests**
-   ```yaml
-   services:
-     my-service:
-       resources:
-         requests:
-           cpu: "50m"     # Reduce from higher values
-           memory: "64Mi"
-   ```
-
-2. **Limit concurrent builds**
-   ```yaml
-   # In Tiltfile
-   update_settings(max_parallel_updates=2)
-   ```
-
-3. **Clean up unused resources**
+#### Solution
+1. Ensure database is included in services:
    ```bash
-   docker system prune -f
-   kubectl delete pods --field-selector=status.phase=Succeeded -n dev-$(whoami)
-   ```
+   tilt up -- --services=app,database,redis    ```
 
-## Configuration Issues
-
-### Issue: Invalid YAML Configuration
-
-#### Diagnosis
-```bash
-# Validate YAML syntax
-yq eval '.services' .tilt/service-config.yaml
-
-# Check for common YAML issues
-python -c "import yaml; yaml.safe_load(open('.tilt/service-config.yaml'))"
-```
-
-#### Solutions
-1. **Fix indentation**
-   ```yaml
-   # Correct indentation (2 spaces)
-   services:
-     my-service:
-       type: "python"
-       ports: [8080]
-   ```
-
-2. **Quote special values**
+2. Verify connection string:
    ```yaml
    env_vars:
-     - name: "VERSION"
-       value: "1.0"  # Quote numeric-looking strings
+     - name: "DATABASE_URL"
+       value: "postgresql://testuser:testpass@database:5432/testdb"
    ```
 
-### Issue: Service Dependencies Not Working
+### 7. Namespace Issues
+
+#### Symptom
+Resources not found or permission denied
 
 #### Diagnosis
 ```bash
-# Check dependency order
-kubectl get pods -n dev-$(whoami) -o wide
+# Check current namespace
+kubectl config view --minify --output 'jsonpath={..namespace}'
 
-# Verify service discovery
-kubectl get endpoints -n dev-$(whoami)
+# List all namespaces
+kubectl get namespaces
+
+# Check resources in your namespace
+kubectl get all -n dev-$(whoami)
 ```
 
-#### Solutions
-1. **Fix dependency configuration**
-   ```yaml
-   services:
-     web-service:
-       dependencies: ["database", "redis"]  # Ensure dependencies exist
-   ```
+#### Solution
+```bash
+# Create namespace if missing
+kubectl create namespace dev-$(whoami)
 
-2. **Check service names**
-   ```bash
-   # Services must match exactly
-   kubectl get services -n dev-$(whoami)
-   ```
+# Use correct developer_id
+tilt up -- --services=app ```
 
-## Cluster Issues
+### 8. Dependencies Not Starting
 
-### Issue: Cluster Not Accessible
+#### Symptom
+Service fails because dependencies aren't ready
+
+#### Solution
+Include all dependencies in the services list:
+```bash
+# Wrong - missing dependencies
+tilt up -- --services=app 
+# Correct - includes dependencies
+tilt up -- --services=app,database,redis ```
+
+### 9. Memory/Resource Issues
+
+#### Symptom
+Pods getting OOMKilled or evicted
 
 #### Diagnosis
 ```bash
-# Check cluster status
-kubectl cluster-info
-kubectl get nodes
-
-# Check kubeconfig
-kubectl config current-context
-kubectl config get-contexts
-```
-
-#### Solutions
-1. **Switch to correct context**
-   ```bash
-   kubectl config use-context docker-desktop
-   # or
-   kubectl config use-context kind-tilt-dev
-   ```
-
-2. **Recreate cluster**
-   ```bash
-   # For kind
-   kind delete cluster --name tilt-dev
-   kind create cluster --name tilt-dev
-   
-   # For k3d
-   k3d cluster delete tilt-dev
-   k3d cluster create tilt-dev
-   ```
-
-### Issue: Insufficient Cluster Resources
-
-#### Diagnosis
-```bash
-# Check node capacity
-kubectl describe nodes
-
-# Check resource quotas
-kubectl describe namespace dev-$(whoami)
-```
-
-#### Solutions
-1. **Increase cluster resources**
-   ```bash
-   # For Docker Desktop: Increase resources in settings
-   # For kind: Create cluster with more resources
-   kind create cluster --name tilt-dev --config - <<EOF
-   kind: Cluster
-   apiVersion: kind.x-k8s.io/v1alpha4
-   nodes:
-   - role: control-plane
-     extraMounts:
-     - hostPath: /var/run/docker.sock
-       containerPath: /var/run/docker.sock
-   EOF
-   ```
-
-2. **Reduce service resource requests**
-   ```yaml
-   resources:
-     requests:
-       cpu: "50m"
-       memory: "64Mi"
-   ```
-
-## Advanced Troubleshooting
-
-### Debug Mode
-
-Enable debug mode for verbose logging:
-```bash
-tilt up -- --enable_debug=true
-```
-
-### Tilt Logs Analysis
-
-```bash
-# View all Tilt logs
-tilt logs --follow
-
-# Filter logs for specific service
-tilt logs <service-name>
-
-# Search logs for errors
-tilt logs | grep -i error
-```
-
-### Kubernetes Debugging
-
-```bash
-# Get detailed pod information
+# Check pod status
 kubectl describe pod <pod-name> -n dev-$(whoami)
+
+# Check Docker Desktop resources
+# Settings -> Resources -> Advanced
+```
+
+#### Solution
+1. Increase Docker Desktop memory allocation
+2. Reduce number of services running
+3. Add resource limits to service config
+
+### 10. Cluster Safety Errors
+
+#### Symptom
+```
+ERROR: Refusing to run on production-like cluster
+```
+
+#### Solution
+The system prevents running on production clusters. Use only:
+- docker-desktop
+- kind
+- minikube
+- k3d
+
+## Debugging Commands
+
+### Essential Commands
+```bash
+# View all resources
+kubectl get all -n dev-$(whoami)
+
+# Describe a failing pod
+kubectl describe pod <pod-name> -n dev-$(whoami)
+
+# View pod logs
+kubectl logs <pod-name> -n dev-$(whoami)
+
+# Execute commands in container
+kubectl exec -it <pod-name> -n dev-$(whoami) -- /bin/bash
 
 # Check events
 kubectl get events -n dev-$(whoami) --sort-by='.lastTimestamp'
-
-# Debug networking
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- nslookup <other-service>
 ```
 
-### Container Debugging
-
+### Tilt-Specific Commands
 ```bash
-# Access container shell
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- /bin/bash
+# View Tilt logs
+tilt logs --follow
 
-# Check container processes
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- ps aux
+# Trigger rebuild
+tilt trigger service-name
 
-# Check container environment
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- env
+# Check Tilt status
+curl http://localhost:10350/api/view
 ```
 
-### File System Debugging
+## Reset Procedures
 
+### Soft Reset
 ```bash
-# Check file permissions
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- ls -la /app
+# Restart services
+tilt down
+tilt up -- --services=app,database,redis ```
 
-# Verify file sync
-kubectl exec -it deployment/<service-name> -n dev-$(whoami) -- find /app -name "*.py" -newer /tmp/sync-marker
+### Hard Reset
+```bash
+# Delete everything and start fresh
+tilt down
+kubectl delete namespace dev-$(whoami)
+docker system prune -a  # Warning: removes all unused images
+tilt up -- --services=app,database,redis ```
+
+## Architecture Reference
+
+The simplified implementation has only 3 files to check:
+
+1. **Tiltfile** - Main orchestration logic
+2. **.tilt/config.star** - Configuration parsing
+3. **.tilt/services.star** - Service deployment
+
+If something isn't working, the issue is likely in one of these files or your service configuration.
+
+## Service Configuration Issues
+
+### Invalid YAML
+```bash
+# Validate YAML syntax
+python -c "import yaml; yaml.safe_load(open('.tilt/service-config.yaml'))"
+```
+
+### Missing Required Fields
+Each service needs:
+- `type` - Service type (python, external, etc.)
+- Either `build_context`+`dockerfile` OR `image`
+
+### Example Working Configuration
+```yaml
+services:
+  my-app:
+    type: "python"
+    build_context: "./services/my-app"
+    dockerfile: "./services/my-app/Dockerfile"
+    ports: [8000]
+    env_vars:
+      - name: "LOG_LEVEL"
+        value: "DEBUG"
 ```
 
 ## Getting Help
 
-### Self-Service Resources
+1. **Check Tilt UI**: http://localhost:10350 for real-time status
+2. **Review logs**: Both Tilt logs and kubectl logs
+3. **Verify configuration**: Check `.tilt/service-config.yaml`
+4. **Check source code**: Only 3 files to review
+5. **Tilt Documentation**: https://docs.tilt.dev/
 
-1. **Run diagnostics**
-   ```bash
-   ./scripts/validate-environment.sh
-   ```
+## Known Limitations
 
-2. **Check documentation**
-   - [DEVELOPER_ONBOARDING.md](DEVELOPER_ONBOARDING.md)
-   - [TILT_CONFIGURATION_GUIDE.md](TILT_CONFIGURATION_GUIDE.md)
-   - [TILT_BEST_PRACTICES.md](TILT_BEST_PRACTICES.md)
+The simplified implementation does NOT support:
+- ECR images
+- Dynamic port allocation
+- Monitoring dashboards
+- Environment configurations
+- Plugin framework
+- Command-based builds (Maven, Gradle)
+- Live updates for non-Python services
 
-3. **Official documentation**
-   - [Tilt Documentation](https://docs.tilt.dev/)
-   - [Kubernetes Documentation](https://kubernetes.io/docs/)
-
-### Collecting Information for Support
-
-When asking for help, include:
-
-```bash
-# Environment information
-./scripts/validate-environment.sh > environment-report.txt
-
-# Tilt logs
-tilt logs > tilt-logs.txt
-
-# Kubernetes information
-kubectl get all -n dev-$(whoami) > k8s-resources.txt
-kubectl describe pods -n dev-$(whoami) > k8s-pod-details.txt
-
-# Configuration files
-tar -czf config-files.tar.gz .tilt/ Tiltfile tilt_config.json
-```
-
-### Common Support Channels
-
-1. **Team Slack/Chat** - For team-specific issues
-2. **Internal Documentation** - Check team wiki or docs
-3. **Tilt Community** - [Tilt Slack](https://tilt.dev/community)
-4. **GitHub Issues** - For bugs in this repository
-
-### Emergency Procedures
-
-If you need to quickly get back to a working state:
-
-```bash
-# Nuclear option - reset everything
-tilt down
-docker system prune -af
-kubectl delete namespace dev-$(whoami)
-kind delete cluster --name tilt-dev
-kind create cluster --name tilt-dev
-tilt up
-```
-
-Remember: Most issues can be resolved with the quick reset commands at the top of this guide. Start simple before trying complex solutions!
+These features were intentionally removed for simplicity.

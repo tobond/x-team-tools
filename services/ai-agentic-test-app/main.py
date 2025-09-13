@@ -77,6 +77,7 @@ async def health_check():
         content={
             "status": "healthy",
             "service": "ai-agentic-market-research",
+            "live_update_test": "WORKING - Modified at {}".format(datetime.datetime.now().strftime("%H:%M:%S")),
             "environment": os.getenv("ENVIRONMENT", "local"),
             "log_level": os.getenv("LOG_LEVEL", "INFO"),
             "crew_status": "demo mode - ready",
@@ -138,7 +139,7 @@ async def execute_research(request: ResearchRequest):
 # 🤖 Agentic Market Research Report: {topic}
 
 ## Executive Summary
-🚀This demonstrates our CrewAI-powered market research workflow with live hot deployment capabilities. The system successfully processes research requests through a multi-agent collaboration framework.
+🚀hot This demonstrates our CrewAI-powered market research workflow with live hot deployment capabilities. The system successfully processes research requests through a multi-agent collaboration framework.
 
 ## Multi-Agent Workflow Demonstration
 
