@@ -1,6 +1,6 @@
 # Code Review Prompt
 
-Perform a systematic code review as a senior engineer. First, analyze the diff between the provided changes and the master branch to understand what's being modified. 
+Perform a systematic code review as a senior engineer. First, analyze the diff between the provided changes and the main branch to understand what's being modified. 
 Review ONLY these changes. Your review must identify issues in order of criticality and provide specific, actionable fixes. 
 Do not suggest features or refactoring beyond the changed lines unless they fix critical bugs.
 
@@ -10,13 +10,13 @@ Do not suggest features or refactoring beyond the changed lines unless they fix 
 - Identify all files changed vs master branch
 - List added/modified/deleted functions and classes
 - Note the scope and impact of changes
-- Understand the intent behind modifications
+- Ultrathink to Understand the intent behind modifications
 
 ### 2. Understand Context
 - Read ALL changes in the diff before commenting
 - Map how modified code flows with unchanged code
-- Review tests to understand expected behavior
-- Note questions without making assumptions
+- Review tests to understand expected behavior (if any)
+- Note questions without making assumptions, verify your reasoning. 
 
 ### 3. Systematic Analysis
 Examine changed code for:

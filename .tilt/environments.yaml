@@ -1,0 +1,43 @@
+# User-Defined Environment Configurations
+# This is where PROJECT-SPECIFIC environment definitions live
+# Users can create any environment names they want with any service combinations
+
+environments:
+  # Minimal development environment
+  minimal:
+    description: "Essential services only for lightweight development"
+    services: ["ai-agentic-test-app"]
+
+  # Backend development with databases
+  backend-only:
+    description: "Backend APIs and databases without frontend components"
+    services: ["ai-agentic-test-app", "database", "redis"]
+
+  # Complete development environment
+  full-stack:
+    description: "Complete environment with all frontend, backend, and data services"
+    services: ["ai-agentic-test-app", "database", "redis"]
+
+  # Production-like staging mirror
+  staging-mirror:
+    description: "Local replica of staging environment using production-like images"
+    services: ["ai-agentic-test-app", "database", "redis"]
+
+  # Lightweight feature development
+  feature-branch:
+    description: "Lightweight setup optimized for feature development"
+    services: ["ai-agentic-test-app", "redis"]
+
+  # Custom user environments (examples)
+  my-demo-setup:
+    description: "Custom demo environment"
+    services: ["ai-agentic-test-app", "redis"]
+
+  integration-test:
+    description: "Integration testing environment"
+    services: ["ai-agentic-test-app", "database"]
+
+# Global environment settings
+global:
+  # Build strategies are now automatically detected based on service configuration
+  # No manual configuration needed
